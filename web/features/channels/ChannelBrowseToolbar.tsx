@@ -1,3 +1,4 @@
+import type { ProbeProgress } from '@/app/useChannelProbe'
 import { ProbeIcon, SearchIcon } from '@/shared/icons'
 
 interface ChannelBrowseToolbarProps {
@@ -9,6 +10,7 @@ interface ChannelBrowseToolbarProps {
   hideUnavailable: boolean
   onToggleHideUnavailable: () => void
   probing: boolean
+  probeProgress?: ProbeProgress | null
   onProbeVisible: () => void
   onProbeAll: () => void
   probeSummary: { playable: number; unreachable: number; invalid: number } | null
@@ -23,6 +25,7 @@ export function ChannelBrowseToolbar({
   hideUnavailable,
   onToggleHideUnavailable,
   probing,
+  probeProgress,
   onProbeVisible,
   onProbeAll,
   probeSummary
@@ -61,7 +64,11 @@ export function ChannelBrowseToolbar({
             onClick={onProbeVisible}
           >
             <ProbeIcon size={14} />
-            {probing ? '检测中' : '检测'}
+            {probing
+              ? probeProgress
+                ? `检测中 ${probeProgress.done}/${probeProgress.total}`
+                : '检测中'
+              : '检测'}
           </button>
           <button
             type="button"

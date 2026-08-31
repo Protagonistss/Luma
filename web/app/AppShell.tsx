@@ -7,7 +7,7 @@ import {
   filterChannelsBySection,
   mergeChannelLines
 } from '@/features/channels/channelSelectors'
-import type { SidebarSection } from '@/features/channels/channelSelectors'
+import type { MergedChannel, SidebarSection } from '@/features/channels/channelSelectors'
 import { Sidebar } from '@/features/channels/Sidebar'
 import { ImportPlaylistPanel } from '@/features/import-playlist/ImportPlaylistPanel'
 import { useTvNavigation } from '@/shared/focus/useTvNavigation'
@@ -47,9 +47,12 @@ export function AppShell() {
   const [hideUnavailable, setHideUnavailable] = useState(false)
 
   const probe = useChannelProbe()
+  // Set after `runProbe` is defined below; lets the auto-refresh callback
+  // (which must be defined before `usePlaylistData`) reuse the chunked probe.
+  const autoProbeRef = useRef<() => void>(() => undefined)
   const handleAutoRefreshed = useCallback(() => {
-    void probe.runProbe()
-  }, [probe.runProbe])
+    autoProbeRef.current()
+  }, [])
   const playlist = usePlaylistData(handleAutoRefreshed)
   const onKeyDown = useTvNavigation()
   const clock = useClock()
@@ -153,8 +156,12 @@ export function AppShell() {
   }
 
   const runProbe = async (channelIds?: string[]) => {
-    const message = await probe.runProbe(channelIds)
+    const ids = channelIds ?? playlist.channels.map((channel) => channel.id)
+    const message = await probe.runProbeChunked(ids)
     setToast(message)
+  }
+  autoProbeRef.current = () => {
+    void runProbe()
   }
 
   // Any import / subscribe / refresh changes the channel set, so a probe
@@ -216,13 +223,21 @@ export function AppShell() {
             favoriteIds={playlist.favoriteIds}
             loading={playlist.loading}
             probing={probe.probing}
+            probeProgress={probe.progress}
             probeStatusById={probe.probeStatusById}
             probeSummary={probe.probeSummary}
             hideUnavailable={hideUnavailable}
             clock={clock}
             onPlay={handlePlay}
             onToggleFavorite={handleToggleFavorite}
-            onProbeVisible={() => void runProbe(visibleChannels.map((channel) => channel.id))}
+            onProbeVisible={() =>
+              void runProbe(
+                visibleChannels.flatMap((channel) => {
+                  const lines = (channel as MergedChannel).lines
+                  return lines ? lines.map((line) => line.id) : [channel.id]
+                })
+              )
+            }
             onProbeAll={() => void runProbe()}
             onToggleHideUnavailable={() => setHideUnavailable((value) => !value)}
             onOpenSettings={() => setView('settings')}

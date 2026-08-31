@@ -9,17 +9,30 @@ export interface ProbeSummary {
   invalid: number
 }
 
+export interface ProbeProgress {
+  done: number
+  total: number
+}
+
 /**
- * State machine for channel availability probing. `runProbe` always resolves
- * with a toast-ready message: a summary line on success or an error message.
- * On mount the persisted probe cache (written by the backend after every
- * probe) is loaded so cards keep their live/offline badges across restarts.
+ * State machine for channel availability probing.
+ *
+ * Probing runs in chunks: each chunk's results are applied (and persisted by
+ * the backend) as soon as it finishes, so badges fill in progressively and a
+ * mid-run failure keeps all partial results. `progress` drives the
+ * "检测中 128/668" toolbar label — without it a multi-minute probe of a
+ * 600-channel list looks frozen.
  */
 export function useChannelProbe() {
   const [probing, setProbing] = useState(false)
   const [probeStatusById, setProbeStatusById] = useState<Record<string, ProbeStatus>>({})
   const [probeSummary, setProbeSummary] = useState<ProbeSummary | null>(null)
+  const [progress, setProgress] = useState<ProbeProgress | null>(null)
   const runningRef = useRef(false)
+  // Latest progress readable from the catch handler without adding it to
+  // the callback deps.
+  const progressRef = useRef<ProbeProgress | null>(null)
+  progressRef.current = progress
 
   useEffect(() => {
     lumaApi
@@ -36,6 +49,8 @@ export function useChannelProbe() {
       }
       return next
     })
+    // Chunk summaries accumulate in runProbeChunked; the hook-level summary
+    // reflects the latest chunk for immediate UI feedback.
     setProbeSummary({
       playable: report.playable,
       unreachable: report.unreachable,
@@ -43,26 +58,47 @@ export function useChannelProbe() {
     })
   }, [])
 
-  const runProbe = useCallback(
-    async (channelIds?: string[]): Promise<string> => {
+  const runProbeChunked = useCallback(
+    async (channelIds: string[], chunkSize = 64): Promise<string> => {
       if (runningRef.current) {
         return '检测正在进行中'
       }
+      if (channelIds.length === 0) {
+        return '没有可检测的频道'
+      }
       runningRef.current = true
       setProbing(true)
+      setProgress({ done: 0, total: channelIds.length })
+
+      const totals = { playable: 0, unreachable: 0, invalid: 0 }
       try {
-        const report = await lumaApi.probeChannels(channelIds)
-        applyReport(report)
-        return `检测完成：可用 ${report.playable}，不可达 ${report.unreachable}，无效 ${report.invalid}`
+        for (let start = 0; start < channelIds.length; start += chunkSize) {
+          // Sequential on purpose: chunks apply their results progressively
+          // and the backend already probes each chunk concurrently.
+          // eslint-disable-next-line no-await-in-loop
+          const report = await lumaApi.probeChannels(channelIds.slice(start, start + chunkSize))
+          applyReport(report)
+          totals.playable += report.playable
+          totals.unreachable += report.unreachable
+          totals.invalid += report.invalid
+          setProgress({
+            done: Math.min(start + chunkSize, channelIds.length),
+            total: channelIds.length
+          })
+        }
+        setProbeSummary(totals)
+        return `检测完成：可用 ${totals.playable}，不可达 ${totals.unreachable}，无效 ${totals.invalid}`
       } catch (err) {
-        return toUserMessage(err)
+        // Partial results are already applied and persisted.
+        return `检测中断（已检测 ${progressRef.current?.done ?? 0}/${channelIds.length}）：${toUserMessage(err)}`
       } finally {
         runningRef.current = false
         setProbing(false)
+        setProgress(null)
       }
     },
     [applyReport]
   )
 
-  return { probing, probeStatusById, probeSummary, runProbe }
+  return { probing, probeStatusById, probeSummary, progress, runProbeChunked }
 }

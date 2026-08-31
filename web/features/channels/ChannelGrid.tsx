@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import type { ProbeProgress } from '@/app/useChannelProbe'
 import { LumaLogoIcon } from '@/shared/icons'
 import type { Channel, ProbeStatus } from '@/shared/tauri/types'
 import { ScrollArea } from '@/shared/ui/ScrollArea'
@@ -19,6 +20,7 @@ interface ChannelGridProps {
   favoriteIds: Set<string>
   loading: boolean
   probing: boolean
+  probeProgress?: ProbeProgress | null
   probeStatusById: Record<string, ProbeStatus>
   probeSummary: { playable: number; unreachable: number; invalid: number } | null
   hideUnavailable: boolean
@@ -54,6 +56,7 @@ export function ChannelGrid({
   favoriteIds,
   loading,
   probing,
+  probeProgress,
   probeStatusById,
   probeSummary,
   hideUnavailable,
@@ -154,6 +157,7 @@ export function ChannelGrid({
         hideUnavailable={hideUnavailable}
         onToggleHideUnavailable={onToggleHideUnavailable}
         probing={probing}
+        probeProgress={probeProgress}
         onProbeVisible={onProbeVisible}
         onProbeAll={onProbeAll}
         probeSummary={probeSummary}

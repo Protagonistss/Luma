@@ -7,7 +7,9 @@ use crate::playlist::Channel;
 
 const PROBE_TIMEOUT_SECS: u64 = 8;
 const MAX_PROBE_BODY_BYTES: usize = 8_192;
-const MAX_CONCURRENT_PROBES: usize = 8;
+/// 16 concurrent probes: a 600+ channel list finishes in minutes, not tens
+/// of minutes, while staying polite to the origins.
+const MAX_CONCURRENT_PROBES: usize = 16;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
