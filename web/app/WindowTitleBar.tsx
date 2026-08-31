@@ -1,7 +1,7 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { LumaLogoIcon } from "@/shared/icons";
+import { LumaTitlebarIcon } from "@/shared/icons";
 
 function MinimizeIcon() {
   return (
@@ -114,7 +114,7 @@ export function WindowTitleBar() {
           aria-label="Luma"
           data-tauri-drag-region
         >
-          <LumaLogoIcon size={20} />
+          <LumaTitlebarIcon size={22} />
         </span>
       </div>
 

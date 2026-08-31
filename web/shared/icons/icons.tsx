@@ -10,6 +10,15 @@ export function LumaLogoIcon(props: IconProps) {
   );
 }
 
+export function LumaTitlebarIcon(props: IconProps) {
+  return (
+    <Icon {...props} stroke="#f3f5f8" strokeWidth={2.1}>
+      <path d={LUMA_ARC_PATH} />
+      <path d={LUMA_PLAY_PATH} fill="#f3f5f8" stroke="none" />
+    </Icon>
+  );
+}
+
 export function LumaLogoMonochromeIcon(props: IconProps) {
   return <LumaLogoIcon {...props} />;
 }

@@ -10,6 +10,7 @@ export {
   LiveIcon,
   LumaLogoIcon,
   LumaLogoMonochromeIcon,
+  LumaTitlebarIcon,
   ProbeIcon,
   RefreshIcon,
   SearchIcon,

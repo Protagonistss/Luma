@@ -98,12 +98,12 @@ body,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink-secondary);
+  color: var(--ink);
 }
 
 .window-titlebar__brand svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
 }
 
 .window-titlebar__controls {
@@ -1697,7 +1697,7 @@ input:focus-visible,
 
 .luma-brand-mark__play {
   opacity: 0;
-  transform-origin: 37px 52px;
+  transform-origin: 36px 53px;
   transform: scale(0.82);
 }
 
