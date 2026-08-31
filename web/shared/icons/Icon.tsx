@@ -1,18 +1,18 @@
-import type { ReactNode, SVGAttributes } from "react";
+import type { ReactNode, SVGAttributes } from 'react'
 
 export interface IconProps extends SVGAttributes<SVGSVGElement> {
-  size?: number;
+  size?: number
 }
 
 export function Icon({
   size = 24,
   children,
-  viewBox = "0 0 24 24",
-  fill = "none",
-  stroke = "currentColor",
+  viewBox = '0 0 24 24',
+  fill = 'none',
+  stroke = 'currentColor',
   strokeWidth = 1.75,
-  strokeLinecap = "round",
-  strokeLinejoin = "round",
+  strokeLinecap = 'round',
+  strokeLinejoin = 'round',
   ...props
 }: IconProps & { children: ReactNode }) {
   return (
@@ -25,10 +25,10 @@ export function Icon({
       strokeWidth={strokeWidth}
       strokeLinecap={strokeLinecap}
       strokeLinejoin={strokeLinejoin}
-      aria-hidden={props["aria-hidden"] ?? true}
+      aria-hidden={props['aria-hidden'] ?? true}
       {...props}
     >
       {children}
     </svg>
-  );
+  )
 }

@@ -47,10 +47,10 @@ pnpm tauri dev
 仅调试前端样式时，也可以只跑：
 
 ```bash
-pnpm dev:web
+pnpm dev
 ```
 
-注意：`pnpm dev:web` 没有 Tauri 后端，无法测试导入、收藏等需要 Rust 的功能。
+注意：`pnpm dev` 没有 Tauri 后端，无法测试导入、收藏等需要 Rust 的功能。
 
 ## 构建 Windows 安装包
 
@@ -73,9 +73,11 @@ pnpm tauri android build --apk
 ## 自动化检查
 
 ```bash
-pnpm test
-pnpm lint
-pnpm build
+pnpm test          # vitest 单测
+pnpm typecheck     # tsc 类型检查
+pnpm lint          # oxlint（基于 @ithinku/oxlint-config）
+pnpm format:check  # oxfmt 格式检查（基于 @ithinku/oxfmt-config）
+pnpm build         # 类型检查 + vite 构建
 cd native && cargo test
 ```
 

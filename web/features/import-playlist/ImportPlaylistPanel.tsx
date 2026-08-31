@@ -1,85 +1,80 @@
-import { useState } from "react";
+import { useState } from 'react'
 
-import { lumaApi, toUserMessage } from "@/shared/tauri/api";
-import {
-  ChevronRightIcon,
-  FileIcon,
-  ImportIcon,
-  RefreshIcon,
-} from "@/shared/icons";
+import { ChevronRightIcon, FileIcon, ImportIcon, RefreshIcon } from '@/shared/icons'
+import { lumaApi, toUserMessage } from '@/shared/tauri/api'
 
 interface ImportPlaylistPanelProps {
-  onImported: () => void;
+  onImported: () => void
 }
 
 export function ImportPlaylistPanel({ onImported }: ImportPlaylistPanelProps) {
-  const [url, setUrl] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [url, setUrl] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
 
   const importFromUrl = async () => {
-    setLoading(true);
-    setError(null);
-    setMessage(null);
+    setLoading(true)
+    setError(null)
+    setMessage(null)
     try {
-      const playlist = await lumaApi.importPlaylistFromUrl(url.trim());
-      setMessage(`已导入 ${playlist.channels.length} 个频道`);
-      onImported();
+      const playlist = await lumaApi.importPlaylistFromUrl(url.trim())
+      setMessage(`已导入 ${playlist.channels.length} 个频道`)
+      onImported()
     } catch (err) {
-      setError(toUserMessage(err));
+      setError(toUserMessage(err))
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const importFromFile = async () => {
-    setLoading(true);
-    setError(null);
-    setMessage(null);
+    setLoading(true)
+    setError(null)
+    setMessage(null)
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const { readTextFile } = await import("@tauri-apps/plugin-fs");
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const { readTextFile } = await import('@tauri-apps/plugin-fs')
       const selected = await open({
         multiple: false,
-        filters: [{ name: "M3U Playlist", extensions: ["m3u", "m3u8", "txt"] }],
-      });
+        filters: [{ name: 'M3U Playlist', extensions: ['m3u', 'm3u8', 'txt'] }]
+      })
 
       if (!selected || Array.isArray(selected)) {
-        setLoading(false);
-        return;
+        setLoading(false)
+        return
       }
 
-      const content = await readTextFile(selected);
-      const displayName = selected.split(/[\\/]/).pop() ?? "playlist.m3u";
+      const content = await readTextFile(selected)
+      const displayName = selected.split(/[\\/]/).pop() ?? 'playlist.m3u'
       const playlist = await lumaApi.importPlaylistFromText(content, {
-        type: "File",
+        type: 'File',
         path: selected,
-        displayName,
-      });
-      setMessage(`已导入 ${playlist.channels.length} 个频道`);
-      onImported();
+        displayName
+      })
+      setMessage(`已导入 ${playlist.channels.length} 个频道`)
+      onImported()
     } catch (err) {
-      setError(toUserMessage(err));
+      setError(toUserMessage(err))
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const refresh = async () => {
-    setLoading(true);
-    setError(null);
-    setMessage(null);
+    setLoading(true)
+    setError(null)
+    setMessage(null)
     try {
-      const playlist = await lumaApi.refreshPlaylist();
-      setMessage(`已刷新 ${playlist.channels.length} 个频道`);
-      onImported();
+      const playlist = await lumaApi.refreshPlaylist()
+      setMessage(`已刷新 ${playlist.channels.length} 个频道`)
+      onImported()
     } catch (err) {
-      setError(toUserMessage(err));
+      setError(toUserMessage(err))
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <section className="settings-stage">
@@ -105,8 +100,8 @@ export function ImportPlaylistPanel({ onImported }: ImportPlaylistPanelProps) {
               placeholder="https://example.com/playlist.m3u"
               disabled={loading}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && url.trim() && !loading) {
-                  void importFromUrl();
+                if (event.key === 'Enter' && url.trim() && !loading) {
+                  void importFromUrl()
                 }
               }}
             />
@@ -117,7 +112,7 @@ export function ImportPlaylistPanel({ onImported }: ImportPlaylistPanelProps) {
               onClick={importFromUrl}
             >
               <ImportIcon size={16} />
-              {loading ? "导入中" : "导入"}
+              {loading ? '导入中' : '导入'}
             </button>
           </div>
         </label>
@@ -140,12 +135,7 @@ export function ImportPlaylistPanel({ onImported }: ImportPlaylistPanelProps) {
             </span>
             <ChevronRightIcon className="import-option__arrow" size={18} />
           </button>
-          <button
-            type="button"
-            className="import-option"
-            disabled={loading}
-            onClick={refresh}
-          >
+          <button type="button" className="import-option" disabled={loading} onClick={refresh}>
             <span className="import-option__leading">
               <RefreshIcon size={18} />
             </span>
@@ -158,5 +148,5 @@ export function ImportPlaylistPanel({ onImported }: ImportPlaylistPanelProps) {
         </div>
       </div>
     </section>
-  );
+  )
 }

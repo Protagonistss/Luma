@@ -1,31 +1,53 @@
 use std::time::Duration;
 
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{Query, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
+use futures_util::StreamExt;
 use serde::Deserialize;
 use tower_http::cors::{Any, CorsLayer};
 use url::Url;
 
-const PROXY_TIMEOUT_SECS: u64 = 30;
+const CONNECT_TIMEOUT_SECS: u64 = 10;
+const READ_TIMEOUT_SECS: u64 = 30;
+/// Bytes buffered before deciding whether the response is a playlist that
+/// needs rewriting or a media segment that can be streamed through as-is.
+const SNIFF_BYTES: usize = 64 * 1024;
 
 #[derive(Clone)]
 pub struct StreamProxyState {
-    pub base_url: String,
+    base_url: String,
+    /// Per-session secret appended to every proxied URL. Requests without a
+    /// matching token are rejected so other pages in the user's browser (or
+    /// other local processes) cannot use the proxy as an open relay.
+    token: String,
     client: reqwest::Client,
+}
+
+impl StreamProxyState {
+    /// Full signed proxy URL for `stream_url`, e.g.
+    /// `http://127.0.0.1:43121/proxy?token=<token>&url=<encoded>`.
+    pub fn wrap(&self, stream_url: &str) -> Result<String, String> {
+        validate_stream_url(stream_url)?;
+        Ok(signed_proxy_url(self, stream_url))
+    }
 }
 
 #[derive(Debug, Deserialize)]
 struct ProxyQuery {
+    token: Option<String>,
     url: String,
 }
 
 pub async fn start_server() -> Result<StreamProxyState, String> {
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(PROXY_TIMEOUT_SECS))
+        .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        // Per-read timeout instead of a total request timeout: live segments
+        // can legitimately take longer than one total timeout to transfer.
+        .read_timeout(Duration::from_secs(READ_TIMEOUT_SECS))
         .user_agent("Luma/0.1")
         .build()
         .map_err(|err| err.to_string())?;
@@ -38,6 +60,7 @@ pub async fn start_server() -> Result<StreamProxyState, String> {
 
     let proxy_state = StreamProxyState {
         base_url: base_url.clone(),
+        token: uuid::Uuid::new_v4().simple().to_string(),
         client: client.clone(),
     };
 
@@ -60,21 +83,12 @@ pub async fn start_server() -> Result<StreamProxyState, String> {
     Ok(proxy_state)
 }
 
-pub fn wrap_stream_url(proxy_base: &str, stream_url: &str) -> Result<String, String> {
-    validate_stream_url(stream_url)?;
-    Ok(format!(
-        "{}/proxy?url={}",
-        proxy_base.trim_end_matches('/'),
-        urlencoding::encode(stream_url)
-    ))
-}
-
 #[tauri::command]
 pub fn get_proxied_stream_url(
     state: tauri::State<'_, StreamProxyState>,
     stream_url: String,
 ) -> Result<String, String> {
-    wrap_stream_url(&state.base_url, &stream_url)
+    state.wrap(&stream_url)
 }
 
 async fn proxy_handler(
@@ -82,11 +96,36 @@ async fn proxy_handler(
     Query(query): Query<ProxyQuery>,
     headers: HeaderMap,
 ) -> Response {
+    if query.token.as_deref() != Some(state.token.as_str()) {
+        return (StatusCode::FORBIDDEN, "invalid proxy token").into_response();
+    }
+
     match proxy_request(&state, &query.url, &headers).await {
         Ok(response) => response,
         Err(message) => (StatusCode::BAD_GATEWAY, message).into_response(),
     }
 }
+
+/// Request headers worth forwarding upstream. Many IPTV origins enforce
+/// User-Agent / Referer checks and reject anonymous clients with 403.
+const FORWARDED_REQUEST_HEADERS: &[HeaderName] = &[
+    header::ACCEPT,
+    header::ACCEPT_LANGUAGE,
+    header::COOKIE,
+    header::ORIGIN,
+    header::REFERER,
+    header::USER_AGENT,
+];
+
+/// Response headers copied from upstream. `content-length` is only set when
+/// the body is streamed unchanged, so it still matches the real byte count.
+const FORWARDED_RESPONSE_HEADERS: &[HeaderName] = &[
+    header::CONTENT_TYPE,
+    header::CONTENT_ENCODING,
+    header::CONTENT_RANGE,
+    header::ACCEPT_RANGES,
+    header::CACHE_CONTROL,
+];
 
 async fn proxy_request(
     state: &StreamProxyState,
@@ -96,32 +135,64 @@ async fn proxy_request(
     validate_stream_url(target_url)?;
 
     let mut request = state.client.get(target_url);
+    for name in FORWARDED_REQUEST_HEADERS {
+        if let Some(value) = request_headers.get(name) {
+            request = request.header(name, value);
+        }
+    }
     if let Some(range) = request_headers.get(header::RANGE) {
         request = request.header(header::RANGE, range);
     }
 
-    let response = request
+    let mut response = request
         .send()
         .await
         .map_err(|err| format!("upstream request failed: {err}"))?;
     let status = response.status();
-    let upstream_headers = response.headers().clone();
-    let final_url = response.url().clone();
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|err| format!("failed to read upstream body: {err}"))?;
-
     if !status.is_success() {
         return Err(format!("upstream returned http {status}"));
     }
 
-    if is_m3u8_playlist(&final_url, &upstream_headers, &bytes) {
-        let rewritten = rewrite_m3u8(&final_url, &state.base_url, &bytes);
+    let final_url = response.url().clone();
+    let upstream_headers = response.headers().clone();
+
+    // Buffer a prefix of the body to sniff its content type, then either
+    // finish buffering (playlists are small and need rewriting) or stream
+    // the rest straight through (media segments can be large).
+    let mut prefix: Vec<Bytes> = Vec::new();
+    let mut sniffed = 0usize;
+    while sniffed < SNIFF_BYTES {
+        match response
+            .chunk()
+            .await
+            .map_err(|err| format!("failed to read upstream body: {err}"))?
+        {
+            Some(chunk) => {
+                sniffed += chunk.len();
+                prefix.push(chunk);
+            }
+            None => break,
+        }
+    }
+
+    let sniffed_bytes: Vec<u8> = prefix.concat();
+
+    if is_m3u8_playlist(&sniffed_bytes) {
+        let rest = response
+            .bytes()
+            .await
+            .map_err(|err| format!("failed to read upstream body: {err}"))?;
+        let mut body = sniffed_bytes;
+        body.extend_from_slice(&rest);
+
+        let rewritten = rewrite_m3u8(&final_url, state, &body);
         return Ok((
             StatusCode::OK,
             [
-                (header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*")),
+                (
+                    header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                    HeaderValue::from_static("*"),
+                ),
                 (
                     header::CONTENT_TYPE,
                     HeaderValue::from_static("application/vnd.apple.mpegurl"),
@@ -132,28 +203,27 @@ async fn proxy_request(
             .into_response());
     }
 
-    if looks_like_html(&bytes) {
+    if looks_like_html(&sniffed_bytes) {
         return Err("upstream returned a web page instead of a media stream".to_string());
     }
 
-    let mut builder = Response::builder().status(status);
-    builder = builder.header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+    let prefix_stream = futures_util::stream::iter(prefix.into_iter().map(Ok::<_, reqwest::Error>));
+    let body_stream = prefix_stream.chain(response.bytes_stream());
 
-    if let Some(content_type) = upstream_headers.get(header::CONTENT_TYPE) {
-        builder = builder.header(header::CONTENT_TYPE, content_type);
-    }
-    if let Some(content_range) = upstream_headers.get(header::CONTENT_RANGE) {
-        builder = builder.header(header::CONTENT_RANGE, content_range);
-    }
-    if let Some(accept_ranges) = upstream_headers.get(header::ACCEPT_RANGES) {
-        builder = builder.header(header::ACCEPT_RANGES, accept_ranges);
+    let mut builder = Response::builder()
+        .status(status)
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+    for name in FORWARDED_RESPONSE_HEADERS {
+        if let Some(value) = upstream_headers.get(name) {
+            builder = builder.header(name, value);
+        }
     }
     if let Some(content_length) = upstream_headers.get(header::CONTENT_LENGTH) {
         builder = builder.header(header::CONTENT_LENGTH, content_length);
     }
 
     builder
-        .body(Body::from(bytes))
+        .body(Body::from_stream(body_stream))
         .map_err(|err| err.to_string())
 }
 
@@ -165,24 +235,8 @@ fn validate_stream_url(stream_url: &str) -> Result<(), String> {
     }
 }
 
-fn is_m3u8_playlist(final_url: &Url, headers: &HeaderMap, body: &[u8]) -> bool {
-    if body_starts_with_m3u(body) {
-        return true;
-    }
-
-    if headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| {
-            value.contains("mpegurl")
-                || value.contains("m3u8")
-                || value.contains("application/vnd.apple.mpegurl")
-        })
-    {
-        return body_starts_with_m3u(body);
-    }
-
-    final_url.path().ends_with(".m3u8") && body_starts_with_m3u(body)
+fn is_m3u8_playlist(body: &[u8]) -> bool {
+    body_starts_with_m3u(body)
 }
 
 fn body_starts_with_m3u(body: &[u8]) -> bool {
@@ -198,21 +252,19 @@ fn looks_like_html(body: &[u8]) -> bool {
         return false;
     };
     let lowered = text.to_ascii_lowercase();
-    lowered.contains("<!doctype html")
-        || lowered.contains("<html")
-        || lowered.contains("<head")
+    lowered.contains("<!doctype html") || lowered.contains("<html") || lowered.contains("<head")
 }
 
-fn rewrite_m3u8(base_url: &Url, proxy_base: &str, body: &[u8]) -> String {
+fn rewrite_m3u8(base_url: &Url, state: &StreamProxyState, body: &[u8]) -> String {
     let text = String::from_utf8_lossy(body);
     text.lines()
-        .map(|line| rewrite_m3u8_line(base_url, proxy_base, line))
+        .map(|line| rewrite_m3u8_line(base_url, state, line))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-fn rewrite_m3u8_line(base_url: &Url, proxy_base: &str, line: &str) -> String {
-    if let Some(rewritten) = rewrite_uri_attribute_line(base_url, proxy_base, line) {
+fn rewrite_m3u8_line(base_url: &Url, state: &StreamProxyState, line: &str) -> String {
+    if let Some(rewritten) = rewrite_uri_attribute_line(base_url, state, line) {
         return rewritten;
     }
 
@@ -221,30 +273,25 @@ fn rewrite_m3u8_line(base_url: &Url, proxy_base: &str, line: &str) -> String {
         return line.to_string();
     }
 
-    if trimmed.contains("/proxy?url=") {
+    if trimmed.contains("/proxy?token=") {
         return line.to_string();
     }
 
-    let absolute = resolve_url(base_url, trimmed);
-    format!(
-        "{}/proxy?url={}",
-        proxy_base.trim_end_matches('/'),
-        urlencoding::encode(&absolute)
-    )
+    signed_proxy_url(state, &resolve_url(base_url, trimmed))
 }
 
-fn rewrite_uri_attribute_line(base_url: &Url, proxy_base: &str, line: &str) -> Option<String> {
+fn rewrite_uri_attribute_line(
+    base_url: &Url,
+    state: &StreamProxyState,
+    line: &str,
+) -> Option<String> {
     let uri_key = "URI=\"";
     let start = line.find(uri_key)?;
     let value_start = start + uri_key.len();
     let value_end = line[value_start..].find('"')? + value_start;
     let raw_uri = &line[value_start..value_end];
     let absolute = resolve_url(base_url, raw_uri);
-    let proxied = format!(
-        "{}/proxy?url={}",
-        proxy_base.trim_end_matches('/'),
-        urlencoding::encode(&absolute)
-    );
+    let proxied = signed_proxy_url(state, &absolute);
 
     Some(format!(
         "{}{}{}",
@@ -252,6 +299,15 @@ fn rewrite_uri_attribute_line(base_url: &Url, proxy_base: &str, line: &str) -> O
         proxied,
         &line[value_end..]
     ))
+}
+
+fn signed_proxy_url(state: &StreamProxyState, target: &str) -> String {
+    format!(
+        "{}/proxy?token={}&url={}",
+        state.base_url.trim_end_matches('/'),
+        state.token,
+        urlencoding::encode(target)
+    )
 }
 
 fn resolve_url(base_url: &Url, reference: &str) -> String {
@@ -264,36 +320,84 @@ fn resolve_url(base_url: &Url, reference: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::Request;
+    use tower::ServiceExt; // for `oneshot`
+
+    fn test_state() -> StreamProxyState {
+        StreamProxyState {
+            base_url: "http://127.0.0.1:17654".to_string(),
+            token: "test-token".to_string(),
+            client: reqwest::Client::new(),
+        }
+    }
 
     #[test]
     fn rewrites_segment_urls_in_playlist() {
+        let state = test_state();
         let base = Url::parse("http://74.91.26.218:82/live/cctv1hd.m3u8").expect("url");
         let body = "#EXTM3U\n#EXT-X-TARGETDURATION:10\nsegment-001.ts\n";
-        let rewritten = rewrite_m3u8(&base, "http://127.0.0.1:17654", body.as_bytes());
-        assert!(rewritten.contains("/proxy?url=http"));
+        let rewritten = rewrite_m3u8(&base, &state, body.as_bytes());
+        assert!(rewritten.contains("/proxy?token=test-token&url=http"));
         assert!(rewritten.contains("segment-001.ts"));
     }
 
     #[test]
     fn rewrites_uri_attribute() {
+        let state = test_state();
         let base = Url::parse("http://example.com/live/main.m3u8").expect("url");
         let line = r#"#EXT-X-KEY:METHOD=AES-128,URI="key.bin""#;
-        let rewritten = rewrite_uri_attribute_line(&base, "http://127.0.0.1:17654", line)
-            .expect("rewritten");
-        assert!(rewritten.contains("/proxy?url=http"));
+        let rewritten = rewrite_uri_attribute_line(&base, &state, line).expect("rewritten");
+        assert!(rewritten.contains("/proxy?token=test-token&url=http"));
         assert!(rewritten.contains("key.bin"));
     }
 
     #[test]
+    fn does_not_rewrite_already_proxied_lines() {
+        let state = test_state();
+        let base = Url::parse("http://example.com/live/main.m3u8").expect("url");
+        let line =
+            "http://127.0.0.1:17654/proxy?token=test-token&url=http%3A%2F%2Fexample.com%2Fseg.ts";
+        assert_eq!(rewrite_m3u8_line(&base, &state, line), line);
+    }
+
+    #[test]
     fn does_not_treat_html_as_playlist() {
-        let url = Url::parse("http://example.com/live/cctv1.m3u8").expect("url");
         let body = b"<html><head><title>blocked</title></head></html>";
-        assert!(!is_m3u8_playlist(&url, &HeaderMap::new(), body));
+        assert!(!is_m3u8_playlist(body));
         assert!(looks_like_html(body));
     }
 
     #[test]
     fn rejects_unsupported_scheme() {
         assert!(validate_stream_url("rtmp://example.com/live").is_err());
+    }
+
+    #[test]
+    fn wrap_includes_token() {
+        let state = test_state();
+        let wrapped = state.wrap("http://example.com/live.m3u8").expect("wrapped");
+        assert!(wrapped.starts_with("http://127.0.0.1:17654/proxy?token=test-token&url="));
+    }
+
+    #[tokio::test]
+    async fn rejects_missing_or_wrong_token() {
+        let state = test_state();
+        let app = Router::new()
+            .route("/proxy", get(proxy_handler))
+            .with_state(state);
+
+        let request = Request::builder()
+            .uri("/proxy?url=http%3A%2F%2Fexample.com%2Fstream.ts")
+            .body(Body::empty())
+            .expect("request");
+        let response = app.clone().oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let request = Request::builder()
+            .uri("/proxy?token=wrong&url=http%3A%2F%2Fexample.com%2Fstream.ts")
+            .body(Body::empty())
+            .expect("request");
+        let response = app.oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 }

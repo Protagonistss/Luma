@@ -29,14 +29,8 @@ pub struct Playlist {
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
 pub enum PlaylistSource {
-    Url {
-        url: String,
-        display_url: String,
-    },
-    File {
-        path: String,
-        display_name: String,
-    },
+    Url { url: String, display_url: String },
+    File { path: String, display_name: String },
 }
 
 impl PlaylistSource {

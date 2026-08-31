@@ -19,15 +19,13 @@ fn init_temp_storage() -> tempfile::TempDir {
 }
 
 #[test]
+#[serial_test::serial]
 fn imports_demo_playlist_file() {
     let _guard = init_temp_storage();
     let content = fs::read_to_string(demo_playlist_path()).expect("read demo playlist");
     let playlist = storage::import_playlist_from_text(
         &content,
-        PlaylistSource::from_file(
-            &demo_playlist_path().to_string_lossy(),
-            "demo-playlist.m3u",
-        ),
+        PlaylistSource::from_file(&demo_playlist_path().to_string_lossy(), "demo-playlist.m3u"),
     )
     .expect("import demo playlist");
 

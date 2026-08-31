@@ -1,31 +1,31 @@
-import { useState } from "react";
+import { useState } from 'react'
 
-import { LiveIcon } from "@/shared/icons";
-import { isRenderableLogoUrl } from "@/shared/media/logoUrl";
-import type { Channel } from "@/shared/tauri/types";
+import { LiveIcon } from '@/shared/icons'
+import { isRenderableLogoUrl } from '@/shared/media/logoUrl'
+import type { Channel } from '@/shared/tauri/types'
 
 interface FeaturedHeroProps {
-  channel: Channel;
-  onPlay: () => void;
+  channel: Channel
+  onPlay: () => void
 }
 
 function heroGradient(name: string) {
-  let hash = 0;
+  let hash = 0
   for (const char of name) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
   }
   const palettes = [
-    "linear-gradient(135deg, #1a2a3d 0%, #0c1018 55%, #101620 100%)",
-    "linear-gradient(135deg, #221c38 0%, #0d0f16 55%, #121018 100%)",
-    "linear-gradient(135deg, #152a28 0%, #0a0f0e 55%, #0e1412 100%)",
-    "linear-gradient(135deg, #2e1e28 0%, #110c10 55%, #161012 100%)",
-  ];
-  return palettes[hash % palettes.length];
+    'linear-gradient(135deg, #1a2a3d 0%, #0c1018 55%, #101620 100%)',
+    'linear-gradient(135deg, #221c38 0%, #0d0f16 55%, #121018 100%)',
+    'linear-gradient(135deg, #152a28 0%, #0a0f0e 55%, #0e1412 100%)',
+    'linear-gradient(135deg, #2e1e28 0%, #110c10 55%, #161012 100%)'
+  ]
+  return palettes[hash % palettes.length]
 }
 
 export function FeaturedHero({ channel, onPlay }: FeaturedHeroProps) {
-  const [logoFailed, setLogoFailed] = useState(false);
-  const logoUrl = isRenderableLogoUrl(channel.logo) ? channel.logo : null;
+  const [logoFailed, setLogoFailed] = useState(false)
+  const logoUrl = isRenderableLogoUrl(channel.logo) ? channel.logo : null
 
   return (
     <button
@@ -60,5 +60,5 @@ export function FeaturedHero({ channel, onPlay }: FeaturedHeroProps) {
         )}
       </div>
     </button>
-  );
+  )
 }

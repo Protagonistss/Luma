@@ -1,5 +1,5 @@
-export { Icon, type IconProps } from "./Icon";
-export { LumaBrandMark } from "./LumaBrandMark";
+export { Icon, type IconProps } from './Icon'
+export { LumaBrandMark } from './LumaBrandMark'
 export {
   ChevronRightIcon,
   ClockIcon,
@@ -16,5 +16,5 @@ export {
   SearchIcon,
   SettingsIcon,
   StarFilledIcon,
-  StarIcon,
-} from "./icons";
+  StarIcon
+} from './icons'

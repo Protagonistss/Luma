@@ -1,13 +1,13 @@
-import { LumaBrandMark } from "@/shared/icons";
+import { LumaBrandMark } from '@/shared/icons'
 
 interface SplashScreenProps {
-  exiting?: boolean;
+  exiting?: boolean
 }
 
 export function SplashScreen({ exiting = false }: SplashScreenProps) {
   return (
     <div
-      className={`splash-screen ${exiting ? "splash-screen--exit" : ""}`}
+      className={`splash-screen ${exiting ? 'splash-screen--exit' : ''}`}
       role="status"
       aria-label="Luma 正在启动"
     >
@@ -16,5 +16,5 @@ export function SplashScreen({ exiting = false }: SplashScreenProps) {
         <p className="splash-screen__title">Luma</p>
       </div>
     </div>
-  );
+  )
 }

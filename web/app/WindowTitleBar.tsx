@@ -1,14 +1,14 @@
-import { useEffect, useState, type MouseEvent } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { useEffect, useState, type MouseEvent } from 'react'
 
-import { LumaTitlebarIcon } from "@/shared/icons";
+import { LumaTitlebarIcon } from '@/shared/icons'
 
 function MinimizeIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
       <path d="M1 5.5h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
-  );
+  )
 }
 
 function MaximizeIcon() {
@@ -25,7 +25,7 @@ function MaximizeIcon() {
         strokeWidth="1.2"
       />
     </svg>
-  );
+  )
 }
 
 function RestoreIcon() {
@@ -40,7 +40,7 @@ function RestoreIcon() {
         strokeLinejoin="round"
       />
     </svg>
-  );
+  )
 }
 
 function CloseIcon() {
@@ -54,53 +54,53 @@ function CloseIcon() {
         strokeLinecap="round"
       />
     </svg>
-  );
+  )
 }
 
 export function WindowTitleBar() {
-  const [maximized, setMaximized] = useState(false);
-  const appWindow = getCurrentWindow();
+  const [maximized, setMaximized] = useState(false)
+  const appWindow = getCurrentWindow()
 
   useEffect(() => {
-    let disposed = false;
+    let disposed = false
 
     void appWindow.isMaximized().then((value) => {
       if (!disposed) {
-        setMaximized(value);
+        setMaximized(value)
       }
-    });
+    })
 
     const unlistenPromise = appWindow.onResized(() => {
       void appWindow.isMaximized().then((value) => {
         if (!disposed) {
-          setMaximized(value);
+          setMaximized(value)
         }
-      });
-    });
+      })
+    })
 
     return () => {
-      disposed = true;
-      void unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, [appWindow]);
+      disposed = true
+      void unlistenPromise.then((unlisten) => unlisten())
+    }
+  }, [appWindow])
 
   const handleTitlebarMouseDown = (event: MouseEvent<HTMLElement>) => {
     if (event.button !== 0) {
-      return;
+      return
     }
 
-    const target = event.target as HTMLElement;
-    if (target.closest(".window-titlebar__controls")) {
-      return;
+    const target = event.target as HTMLElement
+    if (target.closest('.window-titlebar__controls')) {
+      return
     }
 
     if (event.detail === 2) {
-      void appWindow.toggleMaximize();
-      return;
+      void appWindow.toggleMaximize()
+      return
     }
 
-    void appWindow.startDragging();
-  };
+    void appWindow.startDragging()
+  }
 
   return (
     <header
@@ -109,11 +109,7 @@ export function WindowTitleBar() {
       onMouseDown={handleTitlebarMouseDown}
     >
       <div className="window-titlebar__drag" data-tauri-drag-region>
-        <span
-          className="window-titlebar__brand"
-          aria-label="Luma"
-          data-tauri-drag-region
-        >
+        <span className="window-titlebar__brand" aria-label="Luma" data-tauri-drag-region>
           <LumaTitlebarIcon size={22} />
         </span>
       </div>
@@ -130,7 +126,7 @@ export function WindowTitleBar() {
         <button
           type="button"
           className="window-titlebar__button"
-          aria-label={maximized ? "还原" : "最大化"}
+          aria-label={maximized ? '还原' : '最大化'}
           onClick={() => void appWindow.toggleMaximize()}
         >
           {maximized ? <RestoreIcon /> : <MaximizeIcon />}
@@ -145,5 +141,5 @@ export function WindowTitleBar() {
         </button>
       </div>
     </header>
-  );
+  )
 }

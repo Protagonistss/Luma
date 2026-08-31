@@ -1,182 +1,183 @@
-import { useEffect, useRef, useState } from "react";
-import Hls from "hls.js";
+import Hls from 'hls.js'
+import { useEffect, useRef, useState } from 'react'
 
-import type { PlayChannelResponse } from "@/shared/tauri/types";
-import { resolveDesktopStreamUrl } from "@/shared/tauri/player";
+import { resolveDesktopStreamUrl } from '@/shared/tauri/player'
+import type { PlayChannelResponse } from '@/shared/tauri/types'
 
 interface DesktopPlayerProps {
-  channel: PlayChannelResponse;
-  onClose: () => void;
+  channel: PlayChannelResponse
+  onClose: () => void
 }
 
 function formatHlsError(data: { type: string; details: string; fatal: boolean }) {
-  return `${data.type} / ${data.details}`;
+  return `${data.type} / ${data.details}`
 }
 
 export function DesktopPlayer({ channel, onClose }: DesktopPlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
-  const [status, setStatus] = useState("正在连接直播...");
-  const [error, setError] = useState<string | null>(null);
-  const [showChrome, setShowChrome] = useState(true);
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const hlsRef = useRef<Hls | null>(null)
+  const [status, setStatus] = useState('正在连接直播...')
+  const [error, setError] = useState<string | null>(null)
+  const [showChrome, setShowChrome] = useState(true)
 
   useEffect(() => {
-    const video = videoRef.current;
+    const video = videoRef.current
     if (!video) {
-      return;
+      return
     }
 
-    let cancelled = false;
-    let playbackUrl = channel.streamUrl;
-    setStatus("正在连接直播...");
-    setError(null);
+    let cancelled = false
+    let playbackUrl = channel.streamUrl
+    setStatus('正在连接直播...')
+    setError(null)
 
     const cleanup = () => {
-      hlsRef.current?.destroy();
-      hlsRef.current = null;
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-    };
+      hlsRef.current?.destroy()
+      hlsRef.current = null
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+    }
 
     const startPlayback = async () => {
       try {
-        playbackUrl = await resolveDesktopStreamUrl(channel.streamUrl);
+        playbackUrl = await resolveDesktopStreamUrl(channel.streamUrl)
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "无法启动本地流代理");
-          setStatus("");
+          setError(err instanceof Error ? err.message : '无法启动本地流代理')
+          setStatus('')
         }
-        return;
+        return
       }
 
       if (cancelled) {
-        return;
+        return
       }
 
       if (!Hls.isSupported()) {
-        if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          video.src = playbackUrl;
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = playbackUrl
           video.addEventListener(
-            "loadedmetadata",
+            'loadedmetadata',
             () => {
               if (cancelled) {
-                return;
+                return
               }
-              setStatus("");
+              setStatus('')
               void video.play().catch(() => {
-                setError("自动播放失败，请点击视频开始播放");
-              });
+                setError('自动播放失败，请点击视频开始播放')
+              })
             },
-            { once: true },
-          );
+            { once: true }
+          )
           video.addEventListener(
-            "error",
+            'error',
             () => {
               if (!cancelled) {
-                setError("播放失败，请检查流地址是否有效");
-                setStatus("");
+                setError('播放失败，请检查流地址是否有效')
+                setStatus('')
               }
             },
-            { once: true },
-          );
-          return;
+            { once: true }
+          )
+          return
         }
 
-        setError("当前环境不支持 HLS 播放");
-        setStatus("");
-        return;
+        setError('当前环境不支持 HLS 播放')
+        setStatus('')
+        return
       }
 
       const hls = new Hls({
         enableWorker: true,
-        lowLatencyMode:
-          channel.streamUrl.includes("live") || channel.streamUrl.includes("mux.dev"),
+        // Everything played here is a live stream, so opt into LL-HLS handling
+        // whenever the source supports it.
+        lowLatencyMode: true,
         xhrSetup(xhr) {
-          xhr.withCredentials = false;
-        },
-      });
-      hlsRef.current = hls;
-      hls.attachMedia(video);
+          xhr.withCredentials = false
+        }
+      })
+      hlsRef.current = hls
+      hls.attachMedia(video)
       hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-        hls.loadSource(playbackUrl);
-      });
+        hls.loadSource(playbackUrl)
+      })
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (cancelled) {
-          return;
+          return
         }
-        setStatus("");
+        setStatus('')
         void video.play().catch(() => {
-          setError("自动播放失败，请点击视频开始播放");
-        });
-      });
+          setError('自动播放失败，请点击视频开始播放')
+        })
+      })
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (cancelled || !data.fatal) {
-          return;
+          return
         }
 
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          setStatus("网络异常，正在重试...");
-          hls.startLoad();
-          return;
+          setStatus('网络异常，正在重试...')
+          hls.startLoad()
+          return
         }
 
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          setStatus("媒体解码异常，正在恢复...");
-          hls.recoverMediaError();
-          return;
+          setStatus('媒体解码异常，正在恢复...')
+          hls.recoverMediaError()
+          return
         }
 
-        const details = formatHlsError(data);
-        const hint = channel.streamUrl.includes(".m3u8")
-          ? "请确认该频道源有效；桌面版需通过 Tauri 应用（pnpm dev:desktop）播放。"
-          : "该地址可能不是 HLS 直播流（.m3u8），而是网页链接，无法直接播放。";
-        setError(`播放失败：${details}\n${hint}`);
-        setStatus("");
-      });
-    };
+        const details = formatHlsError(data)
+        const hint = channel.streamUrl.includes('.m3u8')
+          ? '请确认该频道源有效；桌面版需通过 Tauri 应用（pnpm dev:desktop）播放。'
+          : '该地址可能不是 HLS 直播流（.m3u8），而是网页链接，无法直接播放。'
+        setError(`播放失败：${details}\n${hint}`)
+        setStatus('')
+      })
+    }
 
-    void startPlayback();
+    void startPlayback()
 
     return () => {
-      cancelled = true;
-      cleanup();
-    };
-  }, [channel.streamUrl, channel.name]);
+      cancelled = true
+      cleanup()
+    }
+  }, [channel.streamUrl, channel.name])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" || event.key === "Backspace") {
-        event.preventDefault();
-        onClose();
+      if (event.key === 'Escape' || event.key === 'Backspace') {
+        event.preventDefault()
+        onClose()
       }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
 
   useEffect(() => {
-    let timer: number | undefined;
+    let timer: number | undefined
     const resetTimer = () => {
-      setShowChrome(true);
+      setShowChrome(true)
       if (timer) {
-        window.clearTimeout(timer);
+        window.clearTimeout(timer)
       }
-      timer = window.setTimeout(() => setShowChrome(false), 4000);
-    };
+      timer = window.setTimeout(() => setShowChrome(false), 4000)
+    }
 
-    resetTimer();
-    window.addEventListener("mousemove", resetTimer);
-    window.addEventListener("keydown", resetTimer);
+    resetTimer()
+    window.addEventListener('mousemove', resetTimer)
+    window.addEventListener('keydown', resetTimer)
 
     return () => {
       if (timer) {
-        window.clearTimeout(timer);
+        window.clearTimeout(timer)
       }
-      window.removeEventListener("mousemove", resetTimer);
-      window.removeEventListener("keydown", resetTimer);
-    };
-  }, []);
+      window.removeEventListener('mousemove', resetTimer)
+      window.removeEventListener('keydown', resetTimer)
+    }
+  }, [])
 
   return (
     <div className="desktop-player">
@@ -190,7 +191,7 @@ export function DesktopPlayer({ channel, onClose }: DesktopPlayerProps) {
         />
       </div>
 
-      <div className={`desktop-player-chrome ${showChrome ? "visible" : ""}`}>
+      <div className={`desktop-player-chrome ${showChrome ? 'visible' : ''}`}>
         <button type="button" className="player-back-button" onClick={onClose}>
           返回
         </button>
@@ -206,5 +207,5 @@ export function DesktopPlayer({ channel, onClose }: DesktopPlayerProps) {
         </div>
       ) : null}
     </div>
-  );
+  )
 }

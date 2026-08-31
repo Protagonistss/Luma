@@ -140,7 +140,9 @@ fn is_playable_body(body: &[u8], url: &str) -> bool {
         return !url.contains(".m3u8");
     };
 
-    if text.contains("#EXTM3U") || text.contains("#EXT-X-STREAM-INF") || text.contains("#EXT-X-TARGETDURATION")
+    if text.contains("#EXTM3U")
+        || text.contains("#EXT-X-STREAM-INF")
+        || text.contains("#EXT-X-TARGETDURATION")
     {
         return true;
     }

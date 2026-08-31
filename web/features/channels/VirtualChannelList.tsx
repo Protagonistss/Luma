@@ -1,25 +1,26 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ChannelCard } from "./ChannelCard";
+import type { Channel } from '@/shared/tauri/types'
+import type { ProbeStatus } from '@/shared/tauri/types'
+import { useScrollElement } from '@/shared/ui/ScrollArea'
+
+import { ChannelCard } from './ChannelCard'
 import {
   buildChannelVirtualRows,
   CHANNEL_VIRTUALIZE_THRESHOLD,
   estimateChannelVirtualRowSize,
-  getChannelGridColumnCount,
-} from "./channelSelectors";
-import type { Channel } from "@/shared/tauri/types";
-import type { ProbeStatus } from "@/shared/tauri/types";
-import { useScrollElement } from "@/shared/ui/ScrollArea";
+  getChannelGridColumnCount
+} from './channelSelectors'
 
 interface VirtualChannelListProps {
-  channels: Channel[];
-  groupByShelf: boolean;
-  favoriteIds: Set<string>;
-  probeStatusById: Record<string, ProbeStatus>;
-  probing: boolean;
-  onPlay: (channelId: string) => void;
-  onToggleFavorite: (channelId: string) => void;
+  channels: Channel[]
+  groupByShelf: boolean
+  favoriteIds: Set<string>
+  probeStatusById: Record<string, ProbeStatus>
+  probing: boolean
+  onPlay: (channelId: string) => void
+  onToggleFavorite: (channelId: string) => void
 }
 
 export function VirtualChannelList({
@@ -29,52 +30,52 @@ export function VirtualChannelList({
   probeStatusById,
   probing,
   onPlay,
-  onToggleFavorite,
+  onToggleFavorite
 }: VirtualChannelListProps) {
-  const scrollElementRef = useScrollElement();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
+  const scrollElementRef = useScrollElement()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
 
   useEffect(() => {
-    const element = containerRef.current;
+    const element = containerRef.current
     if (!element) {
-      return;
+      return
     }
 
     const updateWidth = () => {
-      setContainerWidth(element.clientWidth);
-    };
+      setContainerWidth(element.clientWidth)
+    }
 
-    updateWidth();
-    const observer = new ResizeObserver(updateWidth);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+    updateWidth()
+    const observer = new ResizeObserver(updateWidth)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   const columnCount = useMemo(
     () => getChannelGridColumnCount(containerWidth || window.innerWidth),
-    [containerWidth],
-  );
+    [containerWidth]
+  )
 
   const rows = useMemo(
     () => buildChannelVirtualRows(channels, columnCount, groupByShelf),
-    [channels, columnCount, groupByShelf],
-  );
+    [channels, columnCount, groupByShelf]
+  )
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollElementRef?.current ?? null,
     estimateSize: (index) =>
       estimateChannelVirtualRowSize(rows[index]!, columnCount, containerWidth || window.innerWidth),
-    overscan: 4,
-  });
+    overscan: 4
+  })
 
   useEffect(() => {
-    rowVirtualizer.measure();
-  }, [columnCount, rows.length, rowVirtualizer]);
+    rowVirtualizer.measure()
+  }, [columnCount, rows.length, rowVirtualizer])
 
   if (channels.length === 0) {
-    return null;
+    return null
   }
 
   return (
@@ -84,9 +85,9 @@ export function VirtualChannelList({
         style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
       >
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-          const row = rows[virtualRow.index];
+          const row = rows[virtualRow.index]
           if (!row) {
-            return null;
+            return null
           }
 
           return (
@@ -97,7 +98,7 @@ export function VirtualChannelList({
               className="virtual-channel-row"
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
-              {row.kind === "shelf-header" ? (
+              {row.kind === 'shelf-header' ? (
                 <header className="shelf-header">
                   <h3>{row.title}</h3>
                   <span>{row.count}</span>
@@ -106,7 +107,7 @@ export function VirtualChannelList({
                 <div
                   className="channel-grid channel-grid--virtual"
                   style={{
-                    gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+                    gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`
                   }}
                 >
                   {row.channels.map((channel) => (
@@ -123,13 +124,13 @@ export function VirtualChannelList({
                 </div>
               )}
             </div>
-          );
+          )
         })}
       </div>
     </div>
-  );
+  )
 }
 
 export function shouldVirtualizeChannels(channelCount: number) {
-  return channelCount >= CHANNEL_VIRTUALIZE_THRESHOLD;
+  return channelCount >= CHANNEL_VIRTUALIZE_THRESHOLD
 }

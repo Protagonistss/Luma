@@ -35,7 +35,7 @@
   --shadow-focus: 0 0 0 1px rgba(255, 255, 255, 0.18);
   color: var(--ink);
   background: var(--bg);
-  font-family: "Plus Jakarta Sans", "Noto Sans SC", sans-serif;
+  font-family: 'Plus Jakarta Sans', 'Noto Sans SC', sans-serif;
   line-height: 1.5;
   font-weight: 500;
   color-scheme: dark;
@@ -500,7 +500,10 @@ input:focus-visible,
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 600;
-  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .filter-chip:hover {
@@ -702,7 +705,9 @@ input:focus-visible,
   color: var(--muted-soft);
   font-size: 0.875rem;
   font-weight: 500;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .category-item span:first-child {
@@ -827,7 +832,9 @@ input:focus-visible,
   border-radius: var(--radius-lg);
   text-align: left;
   overflow: hidden;
-  transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease);
+  transition:
+    transform 0.22s var(--ease),
+    box-shadow 0.22s var(--ease);
 }
 
 .hero-card__mesh {
@@ -1028,7 +1035,7 @@ input:focus-visible,
 }
 
 .channel-poster::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, transparent 42%, rgba(0, 0, 0, 0.62));
@@ -1134,7 +1141,9 @@ input:focus-visible,
   color: #e2e8f0;
   display: grid;
   place-items: center;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .favorite-button svg {
@@ -1262,7 +1271,9 @@ input:focus-visible,
   background: var(--surface);
   color: var(--ink);
   font-size: 0.9rem;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .import-url-input::placeholder {
@@ -1560,7 +1571,9 @@ input:focus-visible,
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.18);
   opacity: 0;
-  transition: opacity 0.25s ease, background 0.2s ease;
+  transition:
+    opacity 0.25s ease,
+    background 0.2s ease;
 }
 
 .scroll-area:not(.scroll-area--native):hover .simplebar-scrollbar::before,

@@ -31,8 +31,7 @@ pub async fn import_playlist_from_text(
     content: String,
     source: PlaylistSource,
 ) -> Result<Playlist, CommandError> {
-    storage::import_playlist_from_text(&content, source)
-        .map_err(CommandError::from)
+    storage::import_playlist_from_text(&content, source).map_err(CommandError::from)
 }
 
 #[tauri::command]
@@ -47,11 +46,8 @@ pub async fn refresh_playlist() -> Result<Playlist, CommandError> {
             let content = tokio::fs::read_to_string(&path)
                 .await
                 .map_err(|err| CommandError::from(AppError::File(err.to_string())))?;
-            import_playlist_from_text(
-                content,
-                PlaylistSource::from_file(&path, &display_name),
-            )
-            .await
+            import_playlist_from_text(content, PlaylistSource::from_file(&path, &display_name))
+                .await
         }
     }
 }

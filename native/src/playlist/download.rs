@@ -15,7 +15,7 @@ pub async fn download_playlist(url: &str) -> AppResult<Playlist> {
         .timeout(std::time::Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
         .build()?;
 
-    let response = client.get(url).send().await?;
+    let mut response = client.get(url).send().await?;
     if !response.status().is_success() {
         return Err(AppError::Network(format!(
             "download failed with status {}",
@@ -23,21 +23,35 @@ pub async fn download_playlist(url: &str) -> AppResult<Playlist> {
         )));
     }
 
-    let bytes = response.bytes().await?;
-    if bytes.len() > MAX_DOWNLOAD_BYTES {
-        return Err(AppError::InvalidPlaylist(format!(
-            "playlist exceeds max size ({MAX_DOWNLOAD_BYTES} bytes)"
-        )));
+    // Reject oversized playlists from Content-Length before buffering.
+    if let Some(length) = response.content_length() {
+        ensure_within_limit(0, length as usize)?;
     }
 
-    let content = String::from_utf8(bytes.to_vec()).map_err(|err| {
-        AppError::InvalidPlaylist(format!("playlist is not valid UTF-8: {err}"))
-    })?;
+    // Stream the body and abort as soon as the limit is exceeded instead of
+    // buffering a huge file first.
+    let mut bytes = Vec::with_capacity(response.content_length().unwrap_or(0) as usize);
+    while let Some(chunk) = response.chunk().await? {
+        ensure_within_limit(bytes.len(), chunk.len())?;
+        bytes.extend_from_slice(&chunk);
+    }
+
+    let content = String::from_utf8(bytes)
+        .map_err(|err| AppError::InvalidPlaylist(format!("playlist is not valid UTF-8: {err}")))?;
 
     match parse_m3u(&content) {
         Ok(playlist) => Ok(playlist),
         Err(_) => playlist_from_stream_url(url, None),
     }
+}
+
+fn ensure_within_limit(current: usize, incoming: usize) -> AppResult<()> {
+    if current + incoming > MAX_DOWNLOAD_BYTES {
+        return Err(AppError::InvalidPlaylist(format!(
+            "playlist exceeds max size ({MAX_DOWNLOAD_BYTES} bytes)"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

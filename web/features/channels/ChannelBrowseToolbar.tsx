@@ -1,17 +1,17 @@
-import { ProbeIcon, SearchIcon } from "@/shared/icons";
+import { ProbeIcon, SearchIcon } from '@/shared/icons'
 
 interface ChannelBrowseToolbarProps {
-  title: string;
-  count: number;
-  clock?: string;
-  searchQuery: string;
-  onSearchChange: (query: string) => void;
-  showPlayableOnly: boolean;
-  onTogglePlayableOnly: () => void;
-  probing: boolean;
-  onProbeVisible: () => void;
-  onProbeAll: () => void;
-  probeSummary: { playable: number; unreachable: number; invalid: number } | null;
+  title: string
+  count: number
+  clock?: string
+  searchQuery: string
+  onSearchChange: (query: string) => void
+  showPlayableOnly: boolean
+  onTogglePlayableOnly: () => void
+  probing: boolean
+  onProbeVisible: () => void
+  onProbeAll: () => void
+  probeSummary: { playable: number; unreachable: number; invalid: number } | null
 }
 
 export function ChannelBrowseToolbar({
@@ -25,7 +25,7 @@ export function ChannelBrowseToolbar({
   probing,
   onProbeVisible,
   onProbeAll,
-  probeSummary,
+  probeSummary
 }: ChannelBrowseToolbarProps) {
   return (
     <div className="channel-browse-toolbar">
@@ -49,7 +49,7 @@ export function ChannelBrowseToolbar({
         <div className="channel-browse-toolbar__actions">
           <button
             type="button"
-            className={`filter-chip ${showPlayableOnly ? "active" : ""}`}
+            className={`filter-chip ${showPlayableOnly ? 'active' : ''}`}
             onClick={onTogglePlayableOnly}
           >
             仅可用
@@ -61,7 +61,7 @@ export function ChannelBrowseToolbar({
             onClick={onProbeVisible}
           >
             <ProbeIcon size={14} />
-            {probing ? "检测中" : "检测"}
+            {probing ? '检测中' : '检测'}
           </button>
           <button
             type="button"
@@ -83,5 +83,5 @@ export function ChannelBrowseToolbar({
         </div>
       ) : null}
     </div>
-  );
+  )
 }

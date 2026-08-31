@@ -1,71 +1,42 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback } from 'react'
 
-import { useChannelGridNavigation } from "./useChannelGridNavigation";
+import { SpatialNavigator, type FocusDirection } from './focusNav'
 
-const FOCUSABLE_SELECTOR =
-  'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])';
-
-export function useFocusTrap(containerRef: React.RefObject<HTMLElement>) {
-  const lastFocused = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    lastFocused.current = document.activeElement as HTMLElement | null;
-    const container = containerRef.current;
-    if (!container) {
-      return;
-    }
-
-    const first = container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-    first?.focus();
-
-    return () => {
-      lastFocused.current?.focus();
-    };
-  }, [containerRef]);
+const KEY_DIRECTIONS: Record<string, FocusDirection> = {
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  ArrowUp: 'up',
+  ArrowDown: 'down'
 }
 
+/** Arrow keys inside form fields must keep moving the caret, not the focus. */
+const TEXT_INPUT_SELECTOR = 'input, textarea, select'
+
+const spatialNavigator = new SpatialNavigator()
+
+/**
+ * TV remote spatial navigation for the whole app shell: one engine covers
+ * sidebar, category panel, toolbar and channel cards, moving focus
+ * geometrically (up/down/left/right) instead of by DOM order.
+ */
 export function useTvNavigation() {
-  const onChannelGridKeyDown = useChannelGridNavigation();
+  return useCallback((event: React.KeyboardEvent) => {
+    const direction = KEY_DIRECTIONS[event.key]
+    if (!direction) {
+      return
+    }
 
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (onChannelGridKeyDown(event)) {
-        return;
-      }
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active.matches(TEXT_INPUT_SELECTOR)) {
+      return
+    }
 
-      const target = event.currentTarget as HTMLElement;
-      const focusables = Array.from(
-        target.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      ).filter((el) => !el.hasAttribute("disabled"));
-
-      const index = focusables.indexOf(document.activeElement as HTMLElement);
-      if (index < 0) {
-        return;
-      }
-
-      const moveFocus = (nextIndex: number) => {
-        const next = focusables[nextIndex];
-        if (next) {
-          event.preventDefault();
-          next.focus();
-        }
-      };
-
-      switch (event.key) {
-        case "ArrowRight":
-        case "ArrowDown":
-          moveFocus(Math.min(index + 1, focusables.length - 1));
-          break;
-        case "ArrowLeft":
-        case "ArrowUp":
-          moveFocus(Math.max(index - 1, 0));
-          break;
-        default:
-          break;
-      }
-    },
-    [onChannelGridKeyDown],
-  );
-
-  return { onKeyDown };
+    const root = event.currentTarget as HTMLElement
+    const next = spatialNavigator.findNext(root, active, direction)
+    if (next) {
+      event.preventDefault()
+      next.focus()
+      next.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
+  }, [])
 }

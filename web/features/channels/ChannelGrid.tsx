@@ -1,49 +1,48 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChannelBrowseToolbar } from "./ChannelBrowseToolbar";
-import { ChannelCard } from "./ChannelCard";
-import { FeaturedHero } from "./FeaturedHero";
-import { groupChannelsByShelf } from "./channelSelectors";
-import type { SidebarSection } from "./channelSelectors";
-import {
-  shouldVirtualizeChannels,
-  VirtualChannelList,
-} from "./VirtualChannelList";
-import { ScrollArea } from "@/shared/ui/ScrollArea";
-import { LumaLogoIcon } from "@/shared/icons";
-import type { Channel, ProbeStatus } from "@/shared/tauri/types";
+import { useEffect, useMemo, useState } from 'react'
+
+import { LumaLogoIcon } from '@/shared/icons'
+import type { Channel, ProbeStatus } from '@/shared/tauri/types'
+import { ScrollArea } from '@/shared/ui/ScrollArea'
+
+import { ChannelBrowseToolbar } from './ChannelBrowseToolbar'
+import { ChannelCard } from './ChannelCard'
+import { groupChannelsByShelf } from './channelSelectors'
+import type { SidebarSection } from './channelSelectors'
+import { FeaturedHero } from './FeaturedHero'
+import { shouldVirtualizeChannels, VirtualChannelList } from './VirtualChannelList'
 
 interface ChannelGridProps {
-  section: SidebarSection;
-  groupName: string | null;
-  channels: Channel[];
-  featuredChannel: Channel | null;
-  favoriteIds: Set<string>;
-  loading: boolean;
-  probing: boolean;
-  probeStatusById: Record<string, ProbeStatus>;
-  probeSummary: { playable: number; unreachable: number; invalid: number } | null;
-  showPlayableOnly: boolean;
-  clock?: string;
-  onPlay: (channelId: string) => void;
-  onToggleFavorite: (channelId: string) => void;
-  onProbeVisible: () => void;
-  onProbeAll: () => void;
-  onTogglePlayableOnly: () => void;
-  onOpenSettings: () => void;
+  section: SidebarSection
+  groupName: string | null
+  channels: Channel[]
+  featuredChannel: Channel | null
+  favoriteIds: Set<string>
+  loading: boolean
+  probing: boolean
+  probeStatusById: Record<string, ProbeStatus>
+  probeSummary: { playable: number; unreachable: number; invalid: number } | null
+  showPlayableOnly: boolean
+  clock?: string
+  onPlay: (channelId: string) => void
+  onToggleFavorite: (channelId: string) => void
+  onProbeVisible: () => void
+  onProbeAll: () => void
+  onTogglePlayableOnly: () => void
+  onOpenSettings: () => void
 }
 
 function sectionTitle(section: SidebarSection, groupName: string | null) {
   switch (section) {
-    case "all":
-      return "全部频道";
-    case "favorites":
-      return "我的收藏";
-    case "recent":
-      return "最近观看";
-    case "group":
-      return groupName ?? "分类";
+    case 'all':
+      return '全部频道'
+    case 'favorites':
+      return '我的收藏'
+    case 'recent':
+      return '最近观看'
+    case 'group':
+      return groupName ?? '分类'
     default:
-      return "频道";
+      return '频道'
   }
 }
 
@@ -64,50 +63,46 @@ export function ChannelGrid({
   onProbeVisible,
   onProbeAll,
   onTogglePlayableOnly,
-  onOpenSettings,
+  onOpenSettings
 }: ChannelGridProps) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
-    setSearchQuery("");
-  }, [section, groupName]);
+    setSearchQuery('')
+  }, [section, groupName])
 
   const displayChannels = useMemo(
     () =>
       showPlayableOnly
-        ? channels.filter((channel) => probeStatusById[channel.id] === "playable")
+        ? channels.filter((channel) => probeStatusById[channel.id] === 'playable')
         : channels,
-    [channels, probeStatusById, showPlayableOnly],
-  );
+    [channels, probeStatusById, showPlayableOnly]
+  )
 
   const filteredChannels = useMemo(() => {
-    const normalized = searchQuery.trim().toLowerCase();
+    const normalized = searchQuery.trim().toLowerCase()
     if (!normalized) {
-      return displayChannels;
+      return displayChannels
     }
     return displayChannels.filter(
       (channel) =>
         channel.name.toLowerCase().includes(normalized) ||
-        channel.group.toLowerCase().includes(normalized),
-    );
-  }, [displayChannels, searchQuery]);
+        channel.group.toLowerCase().includes(normalized)
+    )
+  }, [displayChannels, searchQuery])
 
   const shelves = useMemo(
     () =>
-      section === "all" && !groupName
+      section === 'all' && !groupName
         ? groupChannelsByShelf(filteredChannels)
         : [{ title: sectionTitle(section, groupName), channels: filteredChannels }],
-    [filteredChannels, groupName, section],
-  );
+    [filteredChannels, groupName, section]
+  )
 
-  const showShelfHeaders = section === "all" && !groupName && shelves.length > 1;
-  const useVirtualList = shouldVirtualizeChannels(filteredChannels.length);
+  const showShelfHeaders = section === 'all' && !groupName && shelves.length > 1
+  const useVirtualList = shouldVirtualizeChannels(filteredChannels.length)
   const showHero =
-    featuredChannel &&
-    section === "all" &&
-    !groupName &&
-    !searchQuery.trim() &&
-    !showPlayableOnly;
+    featuredChannel && section === 'all' && !groupName && !searchQuery.trim() && !showPlayableOnly
 
   if (loading) {
     return (
@@ -115,7 +110,7 @@ export function ChannelGrid({
         <span className="loading-spinner" aria-hidden />
         正在加载频道...
       </div>
-    );
+    )
   }
 
   if (channels.length === 0) {
@@ -130,7 +125,7 @@ export function ChannelGrid({
           导入播放列表
         </button>
       </div>
-    );
+    )
   }
 
   return (
@@ -152,10 +147,7 @@ export function ChannelGrid({
       <ScrollArea className="channel-body-scroll" hideScrollbar>
         <div className="channel-body-inner">
           {showHero ? (
-            <FeaturedHero
-              channel={featuredChannel}
-              onPlay={() => onPlay(featuredChannel.id)}
-            />
+            <FeaturedHero channel={featuredChannel} onPlay={() => onPlay(featuredChannel.id)} />
           ) : null}
 
           {filteredChannels.length === 0 ? (
@@ -163,7 +155,7 @@ export function ChannelGrid({
               <p>
                 {searchQuery.trim()
                   ? `没有匹配「${searchQuery.trim()}」的频道。`
-                  : "当前筛选下没有可用频道，取消「仅可用」或重新检测。"}
+                  : '当前筛选下没有可用频道，取消「仅可用」或重新检测。'}
               </p>
             </div>
           ) : useVirtualList ? (
@@ -204,5 +196,5 @@ export function ChannelGrid({
         </div>
       </ScrollArea>
     </section>
-  );
+  )
 }

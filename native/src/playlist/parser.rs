@@ -93,12 +93,12 @@ fn parse_extinf(line: &str) -> AppResult<ExtInfMeta> {
         .strip_prefix("#EXTINF:")
         .ok_or_else(|| AppError::InvalidPlaylist("invalid #EXTINF line".to_string()))?;
 
-    let (attrs_part, display_name) = if let Some((attrs, name)) = split_attrs_and_name(attrs_and_name)
-    {
-        (attrs, Some(name.trim().to_string()))
-    } else {
-        (attrs_and_name, None)
-    };
+    let (attrs_part, display_name) =
+        if let Some((attrs, name)) = split_attrs_and_name(attrs_and_name) {
+            (attrs, Some(name.trim().to_string()))
+        } else {
+            (attrs_and_name, None)
+        };
 
     let attrs = parse_attributes(&strip_duration_prefix(attrs_part));
 
@@ -277,7 +277,7 @@ fn derive_name_from_url(url: &str) -> String {
         .and_then(|parsed| {
             parsed
                 .path_segments()
-                .and_then(|segments| segments.filter(|part| !part.is_empty()).last())
+                .and_then(|segments| segments.filter(|part| !part.is_empty()).next_back())
                 .map(str::to_string)
         })
         .unwrap_or_else(|| "直播频道".to_string())
@@ -371,10 +371,7 @@ https://example.com/live/a.m3u8
         let meta = parse_extinf(r#"#EXTINF:-1 tvg-logo="hhttps://i.imgur.com/logo.png",Channel A"#)
             .expect("parse extinf");
         assert_eq!(meta.display_name.as_deref(), Some("Channel A"));
-        assert_eq!(
-            meta.logo.as_deref(),
-            Some("https://i.imgur.com/logo.png")
-        );
+        assert_eq!(meta.logo.as_deref(), Some("https://i.imgur.com/logo.png"));
     }
 
     #[test]

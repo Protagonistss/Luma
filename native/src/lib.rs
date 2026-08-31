@@ -70,7 +70,7 @@ pub fn run() {
             storage::init(app_data_dir)?;
 
             let proxy_state = tauri::async_runtime::block_on(stream_proxy::start_server())
-                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+                .map_err(std::io::Error::other)?;
             app.manage(proxy_state);
 
             #[cfg(desktop)]
