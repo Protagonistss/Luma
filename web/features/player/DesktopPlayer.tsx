@@ -25,6 +25,7 @@ export function DesktopPlayer({
   const hlsRef = useRef<Hls | null>(null)
   const [status, setStatus] = useState('正在连接直播...')
   const [error, setError] = useState<string | null>(null)
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false)
   const [showChrome, setShowChrome] = useState(true)
   // Fatal errors arrive inside hls.js callbacks; keep the failover callback
   // in a ref so the playback effect stays keyed on the stream URL only.
@@ -53,6 +54,20 @@ export function DesktopPlayer({
     let playbackUrl = channel.streamUrl
     setStatus('正在连接直播...')
     setError(null)
+    setAutoplayBlocked(false)
+
+    const tryPlay = () => {
+      if (cancelled || !video) {
+        return
+      }
+      void video.play().catch(() => {
+        if (!cancelled) {
+          // Autoplay policy — not a stream failure; keep chrome interactive.
+          setAutoplayBlocked(true)
+          setStatus('')
+        }
+      })
+    }
 
     const cleanup = () => {
       hlsRef.current?.destroy()
@@ -91,9 +106,7 @@ export function DesktopPlayer({
                 return
               }
               setStatus('')
-              void video.play().catch(() => {
-                setError('自动播放失败，请点击视频开始播放')
-              })
+              tryPlay()
             },
             { once: true }
           )
@@ -134,9 +147,7 @@ export function DesktopPlayer({
           return
         }
         setStatus('')
-        void video.play().catch(() => {
-          setError('自动播放失败，请点击视频开始播放')
-        })
+        tryPlay()
       })
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (cancelled || !data.fatal) {
@@ -166,7 +177,18 @@ export function DesktopPlayer({
       cancelled = true
       cleanup()
     }
-  }, [channel.streamUrl, channel.name])
+  }, [channel.streamUrl, channel.name, channel.userAgent, channel.referrer])
+
+  const handleVideoClick = () => {
+    const video = videoRef.current
+    if (!video || !autoplayBlocked) {
+      return
+    }
+    setAutoplayBlocked(false)
+    void video.play().catch(() => {
+      setAutoplayBlocked(true)
+    })
+  }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -211,6 +233,7 @@ export function DesktopPlayer({
           playsInline
           autoPlay
           crossOrigin="anonymous"
+          onClick={handleVideoClick}
         />
       </div>
 
@@ -228,7 +251,10 @@ export function DesktopPlayer({
                     key={line.channelId}
                     type="button"
                     className={`player-line-pill ${index === lineIndex ? 'active' : ''}`}
-                    onClick={() => onSwitchLine(index)}
+                    onClick={() => {
+                      setAutoplayBlocked(false)
+                      onSwitchLine(index)
+                    }}
                   >
                     线路{index + 1}
                   </button>
@@ -240,12 +266,19 @@ export function DesktopPlayer({
       </div>
 
       {status ? <div className="desktop-player-overlay">{status}</div> : null}
+      {autoplayBlocked ? (
+        <div className="desktop-player-overlay desktop-player-hint">
+          <p>自动播放失败，请点击视频开始播放</p>
+        </div>
+      ) : null}
       {error ? (
         <div className="desktop-player-overlay desktop-player-error">
-          <p>{error}</p>
-          <button type="button" className="ghost-button" onClick={onClose}>
-            返回列表
-          </button>
+          <div className="desktop-player-error__panel">
+            <p>{error}</p>
+            <button type="button" className="ghost-button" onClick={onClose}>
+              返回列表
+            </button>
+          </div>
         </div>
       ) : null}
     </div>

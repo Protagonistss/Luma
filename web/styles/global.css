@@ -1662,7 +1662,7 @@ input:focus-visible,
   top: 0;
   left: 0;
   right: 0;
-  z-index: 2;
+  z-index: 4;
   display: flex;
   justify-content: flex-start;
   align-items: flex-start;
@@ -1760,12 +1760,26 @@ input:focus-visible,
 }
 
 .desktop-player-error {
-  pointer-events: auto;
   color: #fca5a5;
   text-align: center;
   max-width: 40rem;
   white-space: pre-line;
   line-height: 1.6;
+}
+
+.desktop-player-hint {
+  align-items: flex-end;
+  padding-bottom: 48px;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.desktop-player-error__panel {
+  pointer-events: auto;
+  display: grid;
+  gap: 16px;
+  justify-items: center;
 }
 
 /* ── SimpleBar (category panel) ── */

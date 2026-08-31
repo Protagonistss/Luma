@@ -11,6 +11,12 @@ interface ImportPlaylistPanelProps {
 /** Public playlist presets verified against real hosts. */
 const PLAYLIST_PRESETS = [
   {
+    id: 'guovin',
+    label: '国内频道 · 每日测速',
+    detail: 'Guovin · 自动剔除失效源',
+    url: 'https://raw.githubusercontent.com/Guovin/iptv-api/gd/output/result.m3u'
+  },
+  {
     id: 'vbsky',
     label: '国内频道',
     detail: '每日更新 · 带台标/EPG',
@@ -21,6 +27,12 @@ const PLAYLIST_PRESETS = [
     label: '卫视补全',
     detail: '补齐31省卫视 · 带EPG',
     url: 'https://raw.githubusercontent.com/suxuang/myIPTV/main/APTV手机专享.m3u'
+  },
+  {
+    id: 'ipv6',
+    label: 'IPv6 专线',
+    detail: '需网络支持 IPv6 · 画质更稳',
+    url: 'https://raw.githubusercontent.com/suxuang/myIPTV/main/ipv6.m3u'
   },
   {
     id: 'cn',
@@ -189,7 +201,8 @@ export function ImportPlaylistPanel({ onImported }: ImportPlaylistPanelProps) {
         <p className="kicker">设置</p>
         <h2>订阅管理</h2>
         <p className="settings-desc">
-          可同时订阅多个播放列表，同频道源会自动合并为多线路。仅导入你拥有合法使用权的列表；Luma
+          可同时订阅多个播放列表，同频道源会自动合并为多线路。GitHub
+          源直连失败时会自动尝试镜像加速。仅导入你拥有合法使用权的列表；Luma
           不提供节目源。
         </p>
       </header>
