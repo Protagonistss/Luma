@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+dist/
+dist-ssr/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+src-tauri/.tauri/
+
+# Android / signing
+*.keystore
+*.jks
+local.properties
+.gradle/
+
+# Env
+.env
+.env.*
+.npmrc

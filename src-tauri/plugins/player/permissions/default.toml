@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "default"
+description = "Allows opening the native Android TV player."
+commands.allow = ["open_player"]
