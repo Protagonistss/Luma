@@ -1,6 +1,6 @@
 [package]
 name = "luma"
-version = "0.1.0"
+version = "0.0.1"
 description = "Luma Android TV live player"
 authors = ["Protagonistss"]
 edition = "2021"

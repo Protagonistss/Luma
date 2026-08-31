@@ -1478,10 +1478,10 @@ input:focus-visible,
   right: 0;
   z-index: 2;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: flex-start;
-  padding: 28px 36px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.82) 0%, transparent 100%);
+  padding: 20px 24px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.72) 0%, transparent 100%);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.25s ease;
@@ -1490,32 +1490,6 @@ input:focus-visible,
 .desktop-player-chrome.visible {
   opacity: 1;
   pointer-events: auto;
-}
-
-.desktop-player-info {
-  display: grid;
-  gap: 6px;
-}
-
-.desktop-player-live {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: fit-content;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.45);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.desktop-player-chrome strong {
-  font-size: 1.6rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
 }
 
 .player-back-button {

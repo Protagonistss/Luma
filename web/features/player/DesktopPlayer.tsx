@@ -191,13 +191,6 @@ export function DesktopPlayer({ channel, onClose }: DesktopPlayerProps) {
       </div>
 
       <div className={`desktop-player-chrome ${showChrome ? "visible" : ""}`}>
-        <div className="desktop-player-info">
-          <span className="desktop-player-live">
-            <span className="live-dot" aria-hidden />
-            直播中
-          </span>
-          <strong>{channel.name}</strong>
-        </div>
         <button type="button" className="player-back-button" onClick={onClose}>
           返回
         </button>
