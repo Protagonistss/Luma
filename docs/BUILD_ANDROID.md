@@ -36,7 +36,7 @@ pnpm tauri android build --apk
 pnpm test
 pnpm lint
 pnpm build
-cd src-tauri && cargo test
+cd native && cargo test
 ```
 
 ## 真机 / 模拟器验证清单

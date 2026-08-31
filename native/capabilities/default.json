@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "com.protagonistss.luma",
+  "description": "Luma Android TV live player",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    "player:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "http://*" },
+        { "url": "https://*" },
+        { "url": "rtmp://*" },
+        { "url": "rtsp://*" }
+      ]
+    }
+  ]
+}

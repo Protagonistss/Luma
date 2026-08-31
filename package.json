@@ -5,23 +5,29 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:web": "vite",
+    "dev:desktop": "tauri dev --config native/tauri.conf.json",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
-    "tauri:android": "tauri android dev",
-    "tauri:android:build": "tauri android build --apk"
+    "tauri": "tauri --config native/tauri.conf.json",
+    "tauri:dev": "tauri dev --config native/tauri.conf.json",
+    "tauri:build": "tauri build --config native/tauri.conf.json",
+    "tauri:android": "tauri android dev --config native/tauri.conf.json",
+    "tauri:android:build": "tauri android build --apk --config native/tauri.conf.json"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "3.14.10",
     "@tauri-apps/api": "^2.2.0",
     "@tauri-apps/plugin-dialog": "^2.2.0",
     "@tauri-apps/plugin-fs": "^2.2.0",
+    "@tauri-apps/plugin-opener": "2.5.4",
+    "hls.js": "1.7.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "simplebar-react": "3.3.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.0",

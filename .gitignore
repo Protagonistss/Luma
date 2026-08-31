@@ -14,10 +14,11 @@ pnpm-debug.log*
 .idea
 .DS_Store
 
-# Tauri
-src-tauri/target/
-src-tauri/gen/
-src-tauri/.tauri/
+# Tauri / native
+native/target/
+native/target-test/
+native/gen/
+native/.tauri/
 
 # Android / signing
 *.keystore
