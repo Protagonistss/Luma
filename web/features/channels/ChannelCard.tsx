@@ -4,6 +4,8 @@ import { StarFilledIcon, StarIcon } from '@/shared/icons'
 import { isRenderableLogoUrl } from '@/shared/media/logoUrl'
 import type { Channel, ProbeStatus } from '@/shared/tauri/types'
 
+import type { MergedChannel } from './channelSelectors'
+
 interface ChannelCardProps {
   channel: Channel
   isFavorite: boolean
@@ -55,6 +57,7 @@ export function ChannelCard({
   const [logoFailed, setLogoFailed] = useState(false)
   const label = probeLabel(probeStatus, probing)
   const logoUrl = isRenderableLogoUrl(channel.logo) ? channel.logo : null
+  const lineCount = (channel as MergedChannel).lines?.length ?? 1
 
   return (
     <div
@@ -77,6 +80,11 @@ export function ChannelCard({
     >
       <div className="channel-poster" style={{ background: posterTone(channel.name) }}>
         {label ? <span className={`probe-badge ${probeStatus ?? 'checking'}`}>{label}</span> : null}
+        {lineCount > 1 ? (
+          <span className="channel-lines-badge" title={`${lineCount} 路直播源`}>
+            {lineCount}路
+          </span>
+        ) : null}
         <button
           type="button"
           className={`favorite-button ${isFavorite ? 'active' : ''}`}

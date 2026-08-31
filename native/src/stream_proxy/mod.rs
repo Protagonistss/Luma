@@ -27,12 +27,38 @@ pub struct StreamProxyState {
     client: reqwest::Client,
 }
 
+/// Per-request overrides carried through the signed proxy URL so segment
+/// and key requests keep the same headers as the playlist itself.
+#[derive(Debug, Clone, Default)]
+struct RequestHints {
+    user_agent: Option<String>,
+    referrer: Option<String>,
+}
+
 impl StreamProxyState {
     /// Full signed proxy URL for `stream_url`, e.g.
     /// `http://127.0.0.1:43121/proxy?token=<token>&url=<encoded>`.
     pub fn wrap(&self, stream_url: &str) -> Result<String, String> {
         validate_stream_url(stream_url)?;
-        Ok(signed_proxy_url(self, stream_url))
+        Ok(signed_proxy_url(self, stream_url, &RequestHints::default()))
+    }
+
+    /// Like [`wrap`](Self::wrap) but forwards per-channel request hints.
+    pub fn wrap_with_hints(
+        &self,
+        stream_url: &str,
+        user_agent: Option<String>,
+        referrer: Option<String>,
+    ) -> Result<String, String> {
+        validate_stream_url(stream_url)?;
+        Ok(signed_proxy_url(
+            self,
+            stream_url,
+            &RequestHints {
+                user_agent,
+                referrer,
+            },
+        ))
     }
 }
 
@@ -40,6 +66,8 @@ impl StreamProxyState {
 struct ProxyQuery {
     token: Option<String>,
     url: String,
+    ua: Option<String>,
+    referrer: Option<String>,
 }
 
 pub async fn start_server() -> Result<StreamProxyState, String> {
@@ -87,8 +115,10 @@ pub async fn start_server() -> Result<StreamProxyState, String> {
 pub fn get_proxied_stream_url(
     state: tauri::State<'_, StreamProxyState>,
     stream_url: String,
+    user_agent: Option<String>,
+    referrer: Option<String>,
 ) -> Result<String, String> {
-    state.wrap(&stream_url)
+    state.wrap_with_hints(&stream_url, user_agent, referrer)
 }
 
 async fn proxy_handler(
@@ -100,7 +130,12 @@ async fn proxy_handler(
         return (StatusCode::FORBIDDEN, "invalid proxy token").into_response();
     }
 
-    match proxy_request(&state, &query.url, &headers).await {
+    let hints = RequestHints {
+        user_agent: query.ua.clone(),
+        referrer: query.referrer.clone(),
+    };
+
+    match proxy_request(&state, &query.url, &hints, &headers).await {
         Ok(response) => response,
         Err(message) => (StatusCode::BAD_GATEWAY, message).into_response(),
     }
@@ -130,6 +165,7 @@ const FORWARDED_RESPONSE_HEADERS: &[HeaderName] = &[
 async fn proxy_request(
     state: &StreamProxyState,
     target_url: &str,
+    hints: &RequestHints,
     request_headers: &HeaderMap,
 ) -> Result<Response, String> {
     validate_stream_url(target_url)?;
@@ -143,6 +179,13 @@ async fn proxy_request(
     if let Some(range) = request_headers.get(header::RANGE) {
         request = request.header(header::RANGE, range);
     }
+    // Channel-level hints win over whatever the WebView sent.
+    if let Some(user_agent) = hints.user_agent.as_deref() {
+        request = request.header(header::USER_AGENT, user_agent);
+    }
+    if let Some(referrer) = hints.referrer.as_deref() {
+        request = request.header(header::REFERER, referrer);
+    }
 
     let mut response = request
         .send()
@@ -150,7 +193,18 @@ async fn proxy_request(
         .map_err(|err| format!("upstream request failed: {err}"))?;
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("upstream returned http {status}"));
+        // Log the exact failing hop so relay/CDN issues are diagnosable from
+        // the dev console (`response.url()` is the final URL after redirects).
+        eprintln!(
+            "[luma] proxy upstream {} for {} (ua={:?})",
+            status,
+            response.url(),
+            hints.user_agent
+        );
+        return Err(format!(
+            "upstream returned http {status} at {}",
+            response.url()
+        ));
     }
 
     let final_url = response.url().clone();
@@ -185,7 +239,7 @@ async fn proxy_request(
         let mut body = sniffed_bytes;
         body.extend_from_slice(&rest);
 
-        let rewritten = rewrite_m3u8(&final_url, state, &body);
+        let rewritten = rewrite_m3u8(&final_url, state, &body, hints);
         return Ok((
             StatusCode::OK,
             [
@@ -255,16 +309,26 @@ fn looks_like_html(body: &[u8]) -> bool {
     lowered.contains("<!doctype html") || lowered.contains("<html") || lowered.contains("<head")
 }
 
-fn rewrite_m3u8(base_url: &Url, state: &StreamProxyState, body: &[u8]) -> String {
+fn rewrite_m3u8(
+    base_url: &Url,
+    state: &StreamProxyState,
+    body: &[u8],
+    hints: &RequestHints,
+) -> String {
     let text = String::from_utf8_lossy(body);
     text.lines()
-        .map(|line| rewrite_m3u8_line(base_url, state, line))
+        .map(|line| rewrite_m3u8_line(base_url, state, line, hints))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-fn rewrite_m3u8_line(base_url: &Url, state: &StreamProxyState, line: &str) -> String {
-    if let Some(rewritten) = rewrite_uri_attribute_line(base_url, state, line) {
+fn rewrite_m3u8_line(
+    base_url: &Url,
+    state: &StreamProxyState,
+    line: &str,
+    hints: &RequestHints,
+) -> String {
+    if let Some(rewritten) = rewrite_uri_attribute_line(base_url, state, line, hints) {
         return rewritten;
     }
 
@@ -277,13 +341,14 @@ fn rewrite_m3u8_line(base_url: &Url, state: &StreamProxyState, line: &str) -> St
         return line.to_string();
     }
 
-    signed_proxy_url(state, &resolve_url(base_url, trimmed))
+    signed_proxy_url(state, &resolve_url(base_url, trimmed), hints)
 }
 
 fn rewrite_uri_attribute_line(
     base_url: &Url,
     state: &StreamProxyState,
     line: &str,
+    hints: &RequestHints,
 ) -> Option<String> {
     let uri_key = "URI=\"";
     let start = line.find(uri_key)?;
@@ -291,7 +356,7 @@ fn rewrite_uri_attribute_line(
     let value_end = line[value_start..].find('"')? + value_start;
     let raw_uri = &line[value_start..value_end];
     let absolute = resolve_url(base_url, raw_uri);
-    let proxied = signed_proxy_url(state, &absolute);
+    let proxied = signed_proxy_url(state, &absolute, hints);
 
     Some(format!(
         "{}{}{}",
@@ -301,13 +366,20 @@ fn rewrite_uri_attribute_line(
     ))
 }
 
-fn signed_proxy_url(state: &StreamProxyState, target: &str) -> String {
-    format!(
+fn signed_proxy_url(state: &StreamProxyState, target: &str, hints: &RequestHints) -> String {
+    let mut url = format!(
         "{}/proxy?token={}&url={}",
         state.base_url.trim_end_matches('/'),
         state.token,
         urlencoding::encode(target)
-    )
+    );
+    if let Some(user_agent) = hints.user_agent.as_deref() {
+        url.push_str(&format!("&ua={}", urlencoding::encode(user_agent)));
+    }
+    if let Some(referrer) = hints.referrer.as_deref() {
+        url.push_str(&format!("&referrer={}", urlencoding::encode(referrer)));
+    }
+    url
 }
 
 fn resolve_url(base_url: &Url, reference: &str) -> String {
@@ -336,7 +408,7 @@ mod tests {
         let state = test_state();
         let base = Url::parse("http://74.91.26.218:82/live/cctv1hd.m3u8").expect("url");
         let body = "#EXTM3U\n#EXT-X-TARGETDURATION:10\nsegment-001.ts\n";
-        let rewritten = rewrite_m3u8(&base, &state, body.as_bytes());
+        let rewritten = rewrite_m3u8(&base, &state, body.as_bytes(), &RequestHints::default());
         assert!(rewritten.contains("/proxy?token=test-token&url=http"));
         assert!(rewritten.contains("segment-001.ts"));
     }
@@ -346,7 +418,9 @@ mod tests {
         let state = test_state();
         let base = Url::parse("http://example.com/live/main.m3u8").expect("url");
         let line = r#"#EXT-X-KEY:METHOD=AES-128,URI="key.bin""#;
-        let rewritten = rewrite_uri_attribute_line(&base, &state, line).expect("rewritten");
+        let rewritten =
+            rewrite_uri_attribute_line(&base, &state, line, &RequestHints::default())
+                .expect("rewritten");
         assert!(rewritten.contains("/proxy?token=test-token&url=http"));
         assert!(rewritten.contains("key.bin"));
     }
@@ -357,7 +431,7 @@ mod tests {
         let base = Url::parse("http://example.com/live/main.m3u8").expect("url");
         let line =
             "http://127.0.0.1:17654/proxy?token=test-token&url=http%3A%2F%2Fexample.com%2Fseg.ts";
-        assert_eq!(rewrite_m3u8_line(&base, &state, line), line);
+        assert_eq!(rewrite_m3u8_line(&base, &state, line, &RequestHints::default()), line);
     }
 
     #[test]
@@ -377,6 +451,39 @@ mod tests {
         let state = test_state();
         let wrapped = state.wrap("http://example.com/live.m3u8").expect("wrapped");
         assert!(wrapped.starts_with("http://127.0.0.1:17654/proxy?token=test-token&url="));
+    }
+
+    #[test]
+    fn wrap_with_hints_appends_ua_and_referrer() {
+        let state = test_state();
+        let wrapped = state
+            .wrap_with_hints(
+                "http://example.com/live.php?id=河南卫视",
+                Some("AptvPlayer-UA".to_string()),
+                Some("https://example.com/".to_string()),
+            )
+            .expect("wrapped");
+        assert!(wrapped.contains("&ua=AptvPlayer-UA"));
+        assert!(wrapped.contains("&referrer=https%3A%2F%2Fexample.com%2F"));
+        // Non-ASCII URL parts are percent-encoded.
+        assert!(wrapped.contains("%E6%B2%B3%E5%8D%97"));
+    }
+
+    #[test]
+    fn rewrites_playlist_lines_with_hints() {
+        let state = test_state();
+        let base = Url::parse("http://example.com/live/main.m3u8").expect("url");
+        let hints = RequestHints {
+            user_agent: Some("AptvPlayer-UA".to_string()),
+            referrer: None,
+        };
+        let rewritten = rewrite_m3u8_line(
+            &base,
+            &state,
+            "seg-001.ts",
+            &hints,
+        );
+        assert!(rewritten.contains("&ua=AptvPlayer-UA"));
     }
 
     #[tokio::test]

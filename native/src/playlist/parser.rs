@@ -7,6 +7,13 @@ use crate::playlist::model::{Channel, Playlist};
 
 const MAX_CHANNELS: usize = 10_000;
 
+/// Deterministic channel identity: the same stream URL always maps to the
+/// same id, so re-importing / refreshing a list keeps favorites, history and
+/// probe results attached to unchanged channels.
+fn channel_id_for(stream_url: &str) -> String {
+    Uuid::new_v5(&Uuid::NAMESPACE_URL, stream_url.as_bytes()).to_string()
+}
+
 pub fn parse_m3u(content: &str) -> AppResult<Playlist> {
     let normalized = content.trim_start_matches('\u{feff}');
     if !normalized.starts_with("#EXTM3U") {
@@ -27,6 +34,15 @@ pub fn parse_m3u(content: &str) -> AppResult<Playlist> {
 
         if line.starts_with("#EXTINF:") {
             pending_meta = Some(parse_extinf(line)?);
+            continue;
+        }
+
+        // #EXTVLCOPT lines between #EXTINF and the URL carry per-channel
+        // request hints (e.g. `#EXTVLCOPT:http-user-agent=Foo`).
+        if let Some(option) = line.strip_prefix("#EXTVLCOPT:") {
+            if let Some(meta) = pending_meta.as_mut() {
+                apply_vlcopt(meta, option);
+            }
             continue;
         }
 
@@ -53,12 +69,14 @@ pub fn parse_m3u(content: &str) -> AppResult<Playlist> {
             .unwrap_or_else(|| stream_url.clone());
 
         channels.push(Channel {
-            id: Uuid::new_v4().to_string(),
+            id: channel_id_for(&stream_url),
             name,
             stream_url,
             group: meta.group.unwrap_or_else(|| "未分类".to_string()),
             logo: meta.logo,
             tvg_id: meta.tvg_id,
+            user_agent: meta.user_agent,
+            referrer: meta.referrer,
         });
 
         if channels.len() > MAX_CHANNELS {
@@ -86,6 +104,8 @@ struct ExtInfMeta {
     group: Option<String>,
     logo: Option<String>,
     tvg_id: Option<String>,
+    user_agent: Option<String>,
+    referrer: Option<String>,
 }
 
 fn parse_extinf(line: &str) -> AppResult<ExtInfMeta> {
@@ -109,7 +129,23 @@ fn parse_extinf(line: &str) -> AppResult<ExtInfMeta> {
             .get("tvg-logo")
             .and_then(|value| sanitize_logo_url(value)),
         tvg_id: attrs.get("tvg-id").cloned(),
+        user_agent: attrs.get("http-user-agent").cloned(),
+        referrer: attrs
+            .get("http-referrer")
+            .or_else(|| attrs.get("http-referer"))
+            .cloned(),
     })
+}
+
+fn apply_vlcopt(meta: &mut ExtInfMeta, option: &str) {
+    let Some((key, value)) = option.split_once('=') else {
+        return;
+    };
+    match key.trim().to_ascii_lowercase().as_str() {
+        "http-user-agent" => meta.user_agent = Some(value.trim().to_string()),
+        "http-referrer" | "http-referer" => meta.referrer = Some(value.trim().to_string()),
+        _ => {}
+    }
 }
 
 fn split_attrs_and_name(input: &str) -> Option<(&str, &str)> {
@@ -260,12 +296,14 @@ pub fn playlist_from_stream_url(url: &str, name: Option<&str>) -> AppResult<Play
 
     Ok(Playlist {
         channels: vec![Channel {
-            id: Uuid::new_v4().to_string(),
+            id: channel_id_for(url),
             name: display_name,
             stream_url: url.to_string(),
             group: "导入".to_string(),
             logo: None,
             tvg_id: None,
+            user_agent: None,
+            referrer: None,
         }],
         imported_at: chrono_now(),
     })
@@ -312,6 +350,49 @@ https://example.com/live/cctv2.m3u8
         assert_eq!(
             playlist.channels[0].logo.as_deref(),
             Some("https://example.com/cctv1.png")
+        );
+    }
+
+    #[test]
+    fn channel_ids_are_deterministic_across_parses() {
+        let first = parse_m3u(SAMPLE).expect("parse")
+            .channels[0]
+            .id
+            .clone();
+        let second = parse_m3u(SAMPLE).expect("parse again");
+        assert_eq!(second.channels[0].id, first);
+        // Different URLs must never collide.
+        let other = parse_m3u(
+            r"#EXTM3U
+#EXTINF:-1,CCTV-1 综合
+https://example.com/live/cctv1-alt.m3u8
+",
+        )
+        .expect("parse other");
+        assert_ne!(other.channels[0].id, first);
+    }
+
+    #[test]
+    fn extracts_http_request_hints() {
+        let attribute_form = r#"#EXTM3U
+#EXTINF:-1 tvg-id="hn" http-user-agent="AptvPlayer-UA" http-referrer="https://example.com/",河南卫视
+http://example.com/hntv.m3u8
+#EXTINF:-1,湖北卫视
+#EXTVLCOPT:http-user-agent=VLC/3.0
+http://example.com/hbtv.m3u8
+"#;
+        let playlist = parse_m3u(attribute_form).expect("parse");
+        assert_eq!(
+            playlist.channels[0].user_agent.as_deref(),
+            Some("AptvPlayer-UA")
+        );
+        assert_eq!(
+            playlist.channels[0].referrer.as_deref(),
+            Some("https://example.com/")
+        );
+        assert_eq!(
+            playlist.channels[1].user_agent.as_deref(),
+            Some("VLC/3.0")
         );
     }
 

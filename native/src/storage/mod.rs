@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -6,21 +6,50 @@ use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
-use crate::playlist::{parse_m3u, Channel, ChannelGroup, Playlist, PlaylistSource};
+use crate::playlist::{
+    Channel, ChannelGroup, ChannelProbeResult, Playlist, PlaylistSource, ProbeStatus,
+};
 
 const PLAYLIST_FILE: &str = "playlist.json";
 const SOURCE_FILE: &str = "source.json";
+const SUBSCRIPTIONS_FILE: &str = "subscriptions.json";
+const SUBSCRIPTION_CACHE_DIR: &str = "subscriptions";
 const FAVORITES_FILE: &str = "favorites.json";
 const RECENT_FILE: &str = "recent.json";
+const SETTINGS_FILE: &str = "settings.json";
+const PROBE_FILE: &str = "probe-status.json";
 const MAX_RECENT: usize = 20;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    /// Import-time channel normalization (CN rules first, regions to come).
+    pub smart_grouping: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self { smart_grouping: true }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct PersistedState {
     playlist: Option<Playlist>,
+    /// Legacy single-source state, kept only to migrate old installs.
+    #[serde(default)]
     source: Option<PlaylistSource>,
+    #[serde(default)]
+    subscriptions: Vec<crate::playlist::Subscription>,
     favorites: Vec<String>,
     recent: Vec<String>,
+    #[serde(default)]
+    settings: AppSettings,
+    /// Last known probe result per channel id. Pruned on import so entries
+    /// for channels that disappeared from the list never linger.
+    #[serde(default)]
+    probe_status: HashMap<String, ProbeStatus>,
 }
 
 struct Store {
@@ -78,12 +107,39 @@ fn playlist_of(state: &PersistedState) -> AppResult<&Playlist> {
 }
 
 fn read_state_from_disk(dir: &Path) -> AppResult<PersistedState> {
-    Ok(PersistedState {
+    let mut state = PersistedState {
         playlist: read_json_optional(&dir.join(PLAYLIST_FILE))?,
         source: read_json_optional(&dir.join(SOURCE_FILE))?,
+        subscriptions: read_json_optional(&dir.join(SUBSCRIPTIONS_FILE))?.unwrap_or_default(),
         favorites: read_json_optional(&dir.join(FAVORITES_FILE))?.unwrap_or_default(),
         recent: read_json_optional(&dir.join(RECENT_FILE))?.unwrap_or_default(),
-    })
+        settings: read_json_optional(&dir.join(SETTINGS_FILE))?.unwrap_or_default(),
+        probe_status: read_json_optional(&dir.join(PROBE_FILE))?.unwrap_or_default(),
+    };
+
+    if let Some(source) = state.source.take() {
+        state.source = Some(source.normalize_legacy_fields());
+    }
+    for subscription in &mut state.subscriptions {
+        subscription.source = subscription.source.clone().normalize_legacy_fields();
+    }
+
+    // Migrate legacy single-source installs: the old `source.json` becomes
+    // the first subscription, seeded with the existing playlist as cache so
+    // the first rebuild never needs the network.
+    if state.subscriptions.is_empty() {
+        if let Some(source) = state.source.clone() {
+            let mut subscription = crate::playlist::Subscription::from_source(source);
+            subscription.imported_at = state
+                .playlist
+                .as_ref()
+                .and_then(|playlist| playlist.imported_at.trim().parse().ok())
+                .unwrap_or(0);
+            state.subscriptions = vec![subscription];
+        }
+    }
+
+    Ok(state)
 }
 
 fn read_json_optional<T: for<'de> Deserialize<'de>>(path: &Path) -> AppResult<Option<T>> {
@@ -108,7 +164,10 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> AppResult<()> {
     Ok(())
 }
 
-pub fn import_playlist(playlist: Playlist, source: PlaylistSource) -> AppResult<()> {
+/// Persist the merged playlist (built by the commands layer from all
+/// enabled subscriptions). Prunes favorites / history / probe results that
+/// reference channels no longer present.
+pub fn import_playlist(playlist: Playlist) -> AppResult<()> {
     let mut guard = write_lock()?;
     let (state, dir) = read_state_mut(&mut guard)?;
 
@@ -116,7 +175,7 @@ pub fn import_playlist(playlist: Playlist, source: PlaylistSource) -> AppResult<
     // leaves both memory and disk untouched.
     let mut next = state.clone();
     next.playlist = Some(playlist);
-    next.source = Some(source);
+    next.source = None;
 
     if let Some(new_playlist) = &next.playlist {
         let ids: HashSet<&str> = new_playlist
@@ -126,26 +185,133 @@ pub fn import_playlist(playlist: Playlist, source: PlaylistSource) -> AppResult<
             .collect();
         next.favorites.retain(|id| ids.contains(id.as_str()));
         next.recent.retain(|id| ids.contains(id.as_str()));
+        next.probe_status.retain(|id, _| ids.contains(id.as_str()));
     }
 
     write_json_atomic(&dir.join(PLAYLIST_FILE), &next.playlist)?;
-    write_json_atomic(&dir.join(SOURCE_FILE), &next.source)?;
+    write_json_atomic(&dir.join(SUBSCRIPTIONS_FILE), &next.subscriptions)?;
     write_json_atomic(&dir.join(FAVORITES_FILE), &next.favorites)?;
     write_json_atomic(&dir.join(RECENT_FILE), &next.recent)?;
+    write_json_atomic(&dir.join(PROBE_FILE), &next.probe_status)?;
 
     *state = next;
     Ok(())
 }
 
-pub fn import_playlist_from_text(content: &str, source: PlaylistSource) -> AppResult<Playlist> {
-    let playlist = parse_m3u(content)?;
-    import_playlist(playlist.clone(), source)?;
-    Ok(playlist)
+pub fn list_subscriptions() -> AppResult<Vec<crate::playlist::Subscription>> {
+    let guard = read_lock()?;
+    Ok(read_state(&guard)?.subscriptions.clone())
 }
 
-pub fn get_playlist_source() -> AppResult<Option<PlaylistSource>> {
+/// Insert or replace a subscription by id. Returns the stored subscription.
+pub fn upsert_subscription(
+    subscription: crate::playlist::Subscription,
+) -> AppResult<crate::playlist::Subscription> {
+    let mut guard = write_lock()?;
+    let (state, dir) = read_state_mut(&mut guard)?;
+    match state
+        .subscriptions
+        .iter_mut()
+        .find(|item| item.id == subscription.id)
+    {
+        Some(existing) => *existing = subscription.clone(),
+        None => state.subscriptions.push(subscription.clone()),
+    }
+    write_json_atomic(&dir.join(SUBSCRIPTIONS_FILE), &state.subscriptions)?;
+    Ok(subscription)
+}
+
+pub fn remove_subscription(id: &str) -> AppResult<()> {
+    let mut guard = write_lock()?;
+    let (state, dir) = read_state_mut(&mut guard)?;
+    state.subscriptions.retain(|item| item.id != id);
+    write_json_atomic(&dir.join(SUBSCRIPTIONS_FILE), &state.subscriptions)?;
+    // Drop the channel cache along with the subscription itself.
+    let _ = fs::remove_file(subscription_cache_path(dir, id));
+    Ok(())
+}
+
+pub fn set_subscription_enabled(id: &str, enabled: bool) -> AppResult<()> {
+    let mut guard = write_lock()?;
+    let (state, dir) = read_state_mut(&mut guard)?;
+    if let Some(item) = state.subscriptions.iter_mut().find(|item| item.id == id) {
+        item.enabled = enabled;
+    }
+    write_json_atomic(&dir.join(SUBSCRIPTIONS_FILE), &state.subscriptions)
+}
+
+fn subscription_cache_path(dir: &Path, id: &str) -> PathBuf {
+    dir.join(SUBSCRIPTION_CACHE_DIR).join(format!("{id}.json"))
+}
+
+/// Cache a subscription's last successfully fetched channels so a failing
+/// CDN never wipes the merged playlist.
+pub fn set_subscription_cache(id: &str, channels: &[Channel]) -> AppResult<()> {
     let guard = read_lock()?;
-    Ok(read_state(&guard)?.source.clone())
+    let dir = guard.as_ref().map(|store| store.data_dir.clone());
+    drop(guard);
+    let Some(dir) = dir else {
+        return Err(AppError::Storage("store not initialized".to_string()))
+    };
+    let owned: Vec<Channel> = channels.to_vec();
+    write_json_atomic(&subscription_cache_path(&dir, id), &owned)
+}
+
+pub fn get_subscription_cache(id: &str) -> AppResult<Option<Vec<Channel>>> {
+    let guard = read_lock()?;
+    let dir = guard.as_ref().map(|store| store.data_dir.clone());
+    drop(guard);
+    let Some(dir) = dir else {
+        return Err(AppError::Storage("store not initialized".to_string()))
+    };
+    Ok(read_json_optional(&subscription_cache_path(&dir, id))?)
+}
+
+pub fn set_subscription_imported_at(id: &str, imported_at: u64) -> AppResult<()> {
+    let mut guard = write_lock()?;
+    let (state, dir) = read_state_mut(&mut guard)?;
+    if let Some(item) = state.subscriptions.iter_mut().find(|item| item.id == id) {
+        item.imported_at = imported_at;
+    }
+    write_json_atomic(&dir.join(SUBSCRIPTIONS_FILE), &state.subscriptions)
+}
+
+pub fn get_smart_grouping() -> AppResult<bool> {
+    let guard = read_lock()?;
+    Ok(read_state(&guard)?.settings.smart_grouping)
+}
+
+pub fn set_smart_grouping(enabled: bool) -> AppResult<()> {
+    let mut guard = write_lock()?;
+    let (state, dir) = read_state_mut(&mut guard)?;
+    state.settings.smart_grouping = enabled;
+    write_json_atomic(&dir.join(SETTINGS_FILE), &state.settings)
+}
+
+/// Merge fresh probe results into the persisted per-channel map.
+pub fn save_probe_status(results: &[ChannelProbeResult]) -> AppResult<()> {
+    let mut guard = write_lock()?;
+    let (state, dir) = read_state_mut(&mut guard)?;
+    for result in results {
+        state.probe_status.insert(result.channel_id.clone(), result.status.clone());
+    }
+    write_json_atomic(&dir.join(PROBE_FILE), &state.probe_status)
+}
+
+pub fn get_probe_status() -> AppResult<HashMap<String, ProbeStatus>> {
+    let guard = read_lock()?;
+    Ok(read_state(&guard)?.probe_status.clone())
+}
+
+/// Unix-seconds import time of the current playlist, if any.
+pub fn get_playlist_imported_at() -> AppResult<Option<u64>> {
+    let guard = read_lock()?;
+    let imported_at = read_state(&guard)?
+        .playlist
+        .as_ref()
+        .map(|playlist| playlist.imported_at.trim().to_string());
+    Ok(imported_at
+        .and_then(|value| value.parse().ok()))
 }
 
 pub fn list_channels(group: Option<String>) -> AppResult<Vec<Channel>> {
@@ -277,7 +443,7 @@ pub fn get_channel(channel_id: &str) -> AppResult<Channel> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::playlist::PlaylistSource;
+    use crate::playlist::{normalize_playlist, parse_m3u, PlaylistSource};
     use serial_test::serial;
 
     fn sample_playlist() -> Playlist {
@@ -290,6 +456,8 @@ mod tests {
                     group: "News".to_string(),
                     logo: None,
                     tvg_id: None,
+                    user_agent: None,
+                    referrer: None,
                 },
                 Channel {
                     id: "ch-2".to_string(),
@@ -298,6 +466,8 @@ mod tests {
                     group: "News".to_string(),
                     logo: None,
                     tvg_id: None,
+                    user_agent: None,
+                    referrer: None,
                 },
             ],
             imported_at: "0".to_string(),
@@ -306,14 +476,113 @@ mod tests {
 
     #[test]
     #[serial]
+    fn smart_grouping_setting_roundtrips_and_persists() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init(dir.path().to_path_buf()).expect("init");
+
+        // Default is enabled.
+        assert!(get_smart_grouping().expect("get"));
+
+        set_smart_grouping(false).expect("set");
+        assert!(!get_smart_grouping().expect("get"));
+
+        // Reload from disk to prove persistence.
+        init(dir.path().to_path_buf()).expect("re-init");
+        assert!(!get_smart_grouping().expect("get"));
+    }
+
+    #[test]
+    #[serial]
+    fn normalize_and_import_applies_smart_grouping() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init(dir.path().to_path_buf()).expect("init");
+
+        let content = "#EXTM3U\n#EXTINF:-1 group-title=\"Undefined\",CCTV-13 新闻 (1080p)\nhttps://example.com/cctv13.m3u8\n#EXTINF:-1 group-title=\"Undefined\",湖南卫视 (2160p)\nhttps://example.com/hntv.m3u8\n";
+
+        import_playlist(normalize_playlist(parse_m3u(content).expect("parse"), true)).expect("import");
+        let channels = list_channels(None).expect("list");
+        assert_eq!(channels[0].name, "CCTV-13 新闻");
+        assert_eq!(channels[0].group, "央视");
+        assert_eq!(channels[1].group, "卫视");
+
+        // Disabled → everything passes through untouched.
+        import_playlist(normalize_playlist(parse_m3u(content).expect("parse"), false)).expect("import");
+        let channels = list_channels(None).expect("list");
+        assert_eq!(channels[0].name, "CCTV-13 新闻 (1080p)");
+        assert_eq!(channels[0].group, "Undefined");
+    }
+
+    #[test]
+    #[serial]
+    fn subscriptions_crud_and_cache_roundtrip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init(dir.path().to_path_buf()).expect("init");
+
+        let sub = crate::playlist::Subscription::from_source(PlaylistSource::from_url(
+            "https://example.com/list.m3u",
+        ));
+        upsert_subscription(sub.clone()).expect("upsert");
+        set_subscription_cache(&sub.id, &sample_playlist().channels).expect("cache");
+        set_subscription_imported_at(&sub.id, 123).expect("ts");
+
+        let stored = list_subscriptions().expect("list");
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].id, sub.id);
+        assert!(stored[0].enabled);
+        assert_eq!(stored[0].imported_at, 123);
+
+        let cached = get_subscription_cache(&sub.id).expect("cache read");
+        assert_eq!(cached.expect("cached").len(), 2);
+
+        // Re-init proves disk persistence.
+        init(dir.path().to_path_buf()).expect("re-init");
+        assert_eq!(list_subscriptions().expect("list").len(), 1);
+
+        set_subscription_enabled(&sub.id, false).expect("toggle");
+        assert!(!list_subscriptions().expect("list")[0].enabled);
+
+        remove_subscription(&sub.id).expect("remove");
+        assert!(list_subscriptions().expect("list").is_empty());
+        assert!(get_subscription_cache(&sub.id).expect("cache read").is_none());
+    }
+
+    #[test]
+    #[serial]
+    fn legacy_single_source_migrates_to_subscription() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let data = dir.path();
+
+        // Old layout: source.json + playlist.json, no subscriptions.json.
+        fs::write(
+            data.join("source.json"),
+            r#"{"type":"url","url":"https://example.com/old.m3u"}"#,
+        )
+        .expect("write source");
+        fs::write(
+            data.join("playlist.json"),
+            serde_json::to_string(&sample_playlist()).expect("serialize"),
+        )
+        .expect("write playlist");
+
+        init(data.to_path_buf()).expect("init");
+
+        let subs = list_subscriptions().expect("list");
+        assert_eq!(subs.len(), 1);
+        assert!(matches!(
+            &subs[0].source,
+            PlaylistSource::Url { url, display_url }
+                if url == "https://example.com/old.m3u" && display_url == "https://example.com/old.m3u"
+        ));
+        assert!(subs[0].enabled);
+    }
+
+    #[test]
+    #[serial]
     fn import_and_list_channels() {
         let dir = tempfile::tempdir().expect("tempdir");
         init(dir.path().to_path_buf()).expect("init");
 
-        import_playlist(
-            sample_playlist(),
-            PlaylistSource::from_url("https://example.com/list.m3u"),
-        )
+        import_playlist(sample_playlist())
         .expect("import");
 
         let channels = list_channels(None).expect("list");
@@ -330,10 +599,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         init(dir.path().to_path_buf()).expect("init");
 
-        import_playlist(
-            sample_playlist(),
-            PlaylistSource::from_url("https://example.com/list.m3u"),
-        )
+        import_playlist(sample_playlist())
         .expect("import");
 
         assert!(toggle_favorite("ch-1").expect("toggle"));
@@ -347,24 +613,89 @@ mod tests {
 
     #[test]
     #[serial]
+    fn reimporting_same_content_keeps_favorites_and_history() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init(dir.path().to_path_buf()).expect("init");
+
+        let content = "#EXTM3U\n#EXTINF:-1 group-title=\"央视\",CCTV-1\nhttps://example.com/live/cctv1.m3u8\n#EXTINF:-1 group-title=\"央视\",CCTV-2\nhttps://example.com/live/cctv2.m3u8\n";
+        import_playlist(normalize_playlist(parse_m3u(content).expect("parse"), false))
+        .expect("import");
+
+        let channels = list_channels(None).expect("channels");
+        let cctv1_id = channels
+            .iter()
+            .find(|c| c.name == "CCTV-1")
+            .map(|c| c.id.clone())
+            .expect("cctv1");
+        assert!(toggle_favorite(&cctv1_id).expect("toggle"));
+
+        // Simulates a daily refresh: same content re-parsed from scratch.
+        import_playlist(normalize_playlist(parse_m3u(content).expect("parse"), false))
+        .expect("re-import");
+
+        // Deterministic ids keep the favorite attached.
+        let favorites = list_favorites().expect("favorites");
+        assert_eq!(favorites.len(), 1);
+        assert_eq!(favorites[0].name, "CCTV-1");
+    }
+
+    #[test]
+    #[serial]
+    fn probe_status_persists_and_prunes_with_playlist() {
+        use crate::playlist::ChannelProbeResult;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        init(dir.path().to_path_buf()).expect("init");
+
+        import_playlist(sample_playlist())
+        .expect("import");
+
+        save_probe_status(&[
+            ChannelProbeResult {
+                channel_id: "ch-1".to_string(),
+                status: ProbeStatus::Playable,
+                latency_ms: Some(12),
+                message: None,
+            },
+            ChannelProbeResult {
+                channel_id: "gone-id".to_string(),
+                status: ProbeStatus::Unreachable,
+                latency_ms: None,
+                message: None,
+            },
+        ])
+        .expect("save");
+
+        let status = get_probe_status().expect("status");
+        assert_eq!(status.get("ch-1"), Some(&ProbeStatus::Playable));
+        assert!(status.contains_key("gone-id"));
+
+        // Re-import of the same playlist prunes the orphaned entry.
+        import_playlist(sample_playlist())
+        .expect("re-import");
+        let status = get_probe_status().expect("status");
+        assert!(status.contains_key("ch-1"));
+        assert!(!status.contains_key("gone-id"));
+
+        // Reload from disk to prove persistence.
+        init(dir.path().to_path_buf()).expect("re-init");
+        assert!(get_probe_status().expect("status").contains_key("ch-1"));
+    }
+
+    #[test]
+    #[serial]
     fn favorite_for_removed_channel_is_dropped_on_reimport() {
         let dir = tempfile::tempdir().expect("tempdir");
         init(dir.path().to_path_buf()).expect("init");
 
-        import_playlist(
-            sample_playlist(),
-            PlaylistSource::from_url("https://example.com/list.m3u"),
-        )
+        import_playlist(sample_playlist())
         .expect("import");
         assert!(toggle_favorite("ch-2").expect("toggle"));
 
         // Re-import without ch-2.
         let mut smaller = sample_playlist();
         smaller.channels.truncate(1);
-        import_playlist(
-            smaller,
-            PlaylistSource::from_url("https://example.com/list.m3u"),
-        )
+        import_playlist(smaller)
         .expect("re-import");
 
         assert!(list_favorites().expect("favorites").is_empty());
@@ -376,10 +707,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         init(dir.path().to_path_buf()).expect("init");
 
-        import_playlist(
-            sample_playlist(),
-            PlaylistSource::from_url("https://example.com/list.m3u"),
-        )
+        import_playlist(sample_playlist())
         .expect("import");
 
         record_recent("ch-1").expect("record");

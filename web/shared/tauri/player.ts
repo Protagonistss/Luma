@@ -8,13 +8,21 @@ export function shouldUseDesktopPlayer(): boolean {
   return !isAndroidTauri()
 }
 
-export async function resolveDesktopStreamUrl(streamUrl: string): Promise<string> {
+export async function resolveDesktopStreamUrl(
+  streamUrl: string,
+  userAgent?: string | null,
+  referrer?: string | null
+): Promise<string> {
   if (!isTauriRuntime()) {
     return streamUrl
   }
 
   try {
-    return await invoke<string>('get_proxied_stream_url', { streamUrl })
+    return await invoke<string>('get_proxied_stream_url', {
+      streamUrl,
+      userAgent: userAgent ?? null,
+      referrer: referrer ?? null
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     throw new Error(`无法启动本地流代理：${message}`, { cause: err })

@@ -1,6 +1,12 @@
-import type { Channel } from '@/shared/tauri/types'
+import type { Channel, ProbeStatus } from '@/shared/tauri/types'
 
 export type SidebarSection = 'all' | 'favorites' | 'recent' | 'group'
+
+/** A channel whose duplicate sources (same group + normalized name) have
+ * been merged into one card. `lines[0]` is the primary line to play. */
+export interface MergedChannel extends Channel {
+  lines: Channel[]
+}
 
 export const CHANNEL_GRID_MIN_CARD_WIDTH = 168
 export const CHANNEL_GRID_GAP = 16
@@ -29,6 +35,70 @@ export function filterChannelsBySection(
     default:
       return allChannels
   }
+}
+
+/** Merge channels that point at the same station (same group + name after
+ * import-time normalization) into a single card with all playable sources.
+ * Lines are ordered probe-aware: confirmed playable first, unprobed next,
+ * confirmed dead last, keeping list order otherwise. */
+export function mergeChannelLines(
+  channels: Channel[],
+  probeStatusById: Record<string, ProbeStatus> = {}
+): MergedChannel[] {
+  const groups = new Map<string, Channel[]>()
+  const order: string[] = []
+
+  for (const channel of channels) {
+    const key = `${channel.group}\u{0}${channel.name}`
+    const existing = groups.get(key)
+    if (existing) {
+      existing.push(channel)
+    } else {
+      groups.set(key, [channel])
+      order.push(key)
+    }
+  }
+
+  return order.map((key) => {
+    const lines = orderLinesByProbe(groups.get(key)!, probeStatusById)
+    // Object.assign instead of object spread: the merged entry is the primary
+    // line plus its line list, and lint flags spread-modify in maps.
+    return Object.assign({}, lines[0], { lines })
+  })
+}
+
+export function orderLinesByProbe(
+  lines: Channel[],
+  probeStatusById: Record<string, ProbeStatus>
+): Channel[] {
+  const rank = (channel: Channel) => {
+    switch (probeStatusById[channel.id]) {
+      case 'playable':
+        return 0
+      case 'unreachable':
+        return 2
+      case 'invalidBody':
+        return 2
+      default:
+        return 1
+    }
+  }
+  return lines
+    .map((channel, index) => ({ channel, index, rank: rank(channel) }))
+    .toSorted((left, right) => left.rank - right.rank || left.index - right.index)
+    .map((entry) => entry.channel)
+}
+
+/** Map every channel id (including hidden duplicate lines) to its ordered
+ * line list, so playback failover works no matter which card was clicked. */
+export function buildLineIndex(merged: MergedChannel[]): Map<string, Channel[]> {
+  const index = new Map<string, Channel[]>()
+  for (const entry of merged) {
+    for (const line of entry.lines) {
+      index.set(line.id, entry.lines)
+    }
+  }
+  return index
 }
 
 export function buildSidebarItems() {

@@ -6,8 +6,8 @@ interface ChannelBrowseToolbarProps {
   clock?: string
   searchQuery: string
   onSearchChange: (query: string) => void
-  showPlayableOnly: boolean
-  onTogglePlayableOnly: () => void
+  hideUnavailable: boolean
+  onToggleHideUnavailable: () => void
   probing: boolean
   onProbeVisible: () => void
   onProbeAll: () => void
@@ -20,8 +20,8 @@ export function ChannelBrowseToolbar({
   clock,
   searchQuery,
   onSearchChange,
-  showPlayableOnly,
-  onTogglePlayableOnly,
+  hideUnavailable,
+  onToggleHideUnavailable,
   probing,
   onProbeVisible,
   onProbeAll,
@@ -49,10 +49,10 @@ export function ChannelBrowseToolbar({
         <div className="channel-browse-toolbar__actions">
           <button
             type="button"
-            className={`filter-chip ${showPlayableOnly ? 'active' : ''}`}
-            onClick={onTogglePlayableOnly}
+            className={`filter-chip ${hideUnavailable ? 'active' : ''}`}
+            onClick={onToggleHideUnavailable}
           >
-            仅可用
+            隐藏不可用
           </button>
           <button
             type="button"

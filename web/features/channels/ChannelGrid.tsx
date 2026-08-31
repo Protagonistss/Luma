@@ -7,7 +7,7 @@ import { ScrollArea } from '@/shared/ui/ScrollArea'
 import { ChannelBrowseToolbar } from './ChannelBrowseToolbar'
 import { ChannelCard } from './ChannelCard'
 import { groupChannelsByShelf } from './channelSelectors'
-import type { SidebarSection } from './channelSelectors'
+import type { MergedChannel, SidebarSection } from './channelSelectors'
 import { FeaturedHero } from './FeaturedHero'
 import { shouldVirtualizeChannels, VirtualChannelList } from './VirtualChannelList'
 
@@ -21,13 +21,13 @@ interface ChannelGridProps {
   probing: boolean
   probeStatusById: Record<string, ProbeStatus>
   probeSummary: { playable: number; unreachable: number; invalid: number } | null
-  showPlayableOnly: boolean
+  hideUnavailable: boolean
   clock?: string
   onPlay: (channelId: string) => void
   onToggleFavorite: (channelId: string) => void
   onProbeVisible: () => void
   onProbeAll: () => void
-  onTogglePlayableOnly: () => void
+  onToggleHideUnavailable: () => void
   onOpenSettings: () => void
 }
 
@@ -56,13 +56,13 @@ export function ChannelGrid({
   probing,
   probeStatusById,
   probeSummary,
-  showPlayableOnly,
+  hideUnavailable,
   clock,
   onPlay,
   onToggleFavorite,
   onProbeVisible,
   onProbeAll,
-  onTogglePlayableOnly,
+  onToggleHideUnavailable,
   onOpenSettings
 }: ChannelGridProps) {
   const [searchQuery, setSearchQuery] = useState('')
@@ -71,12 +71,27 @@ export function ChannelGrid({
     setSearchQuery('')
   }, [section, groupName])
 
+  // A merged entry disappears only when EVERY line is confirmed dead; a
+  // single live or unprobed line keeps the channel visible.
   const displayChannels = useMemo(
     () =>
-      showPlayableOnly
-        ? channels.filter((channel) => probeStatusById[channel.id] === 'playable')
+      hideUnavailable
+        ? channels.filter((channel) => {
+            const lines = (channel as MergedChannel).lines
+            if (lines && lines.length > 1) {
+              return lines.some(
+                (line) =>
+                  probeStatusById[line.id] !== 'unreachable' &&
+                  probeStatusById[line.id] !== 'invalidBody'
+              )
+            }
+            return (
+              probeStatusById[channel.id] !== 'unreachable' &&
+              probeStatusById[channel.id] !== 'invalidBody'
+            )
+          })
         : channels,
-    [channels, probeStatusById, showPlayableOnly]
+    [channels, probeStatusById, hideUnavailable]
   )
 
   const filteredChannels = useMemo(() => {
@@ -102,7 +117,7 @@ export function ChannelGrid({
   const showShelfHeaders = section === 'all' && !groupName && shelves.length > 1
   const useVirtualList = shouldVirtualizeChannels(filteredChannels.length)
   const showHero =
-    featuredChannel && section === 'all' && !groupName && !searchQuery.trim() && !showPlayableOnly
+    featuredChannel && section === 'all' && !groupName && !searchQuery.trim() && !hideUnavailable
 
   if (loading) {
     return (
@@ -136,8 +151,8 @@ export function ChannelGrid({
         clock={clock}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        showPlayableOnly={showPlayableOnly}
-        onTogglePlayableOnly={onTogglePlayableOnly}
+        hideUnavailable={hideUnavailable}
+        onToggleHideUnavailable={onToggleHideUnavailable}
         probing={probing}
         onProbeVisible={onProbeVisible}
         onProbeAll={onProbeAll}
@@ -155,7 +170,7 @@ export function ChannelGrid({
               <p>
                 {searchQuery.trim()
                   ? `没有匹配「${searchQuery.trim()}」的频道。`
-                  : '当前筛选下没有可用频道，取消「仅可用」或重新检测。'}
+                  : '当前筛选下没有可用频道，取消「隐藏不可用」或重新检测。'}
               </p>
             </div>
           ) : useVirtualList ? (

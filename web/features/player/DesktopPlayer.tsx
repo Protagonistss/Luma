@@ -5,20 +5,43 @@ import { resolveDesktopStreamUrl } from '@/shared/tauri/player'
 import type { PlayChannelResponse } from '@/shared/tauri/types'
 
 interface DesktopPlayerProps {
+  /** The line currently being played: `lines[lineIndex]`. */
   channel: PlayChannelResponse
+  /** All sources of this station, best-known line first. */
+  lines: PlayChannelResponse[]
+  lineIndex: number
+  onSwitchLine: (index: number) => void
   onClose: () => void
 }
 
-function formatHlsError(data: { type: string; details: string; fatal: boolean }) {
-  return `${data.type} / ${data.details}`
-}
-
-export function DesktopPlayer({ channel, onClose }: DesktopPlayerProps) {
+export function DesktopPlayer({
+  channel,
+  lines,
+  lineIndex,
+  onSwitchLine,
+  onClose
+}: DesktopPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
   const [status, setStatus] = useState('正在连接直播...')
   const [error, setError] = useState<string | null>(null)
   const [showChrome, setShowChrome] = useState(true)
+  // Fatal errors arrive inside hls.js callbacks; keep the failover callback
+  // in a ref so the playback effect stays keyed on the stream URL only.
+  const switchLineRef = useRef(onSwitchLine)
+  switchLineRef.current = onSwitchLine
+
+  const failover = useRef(() => {})
+  failover.current = () => {
+    if (lineIndex + 1 < lines.length) {
+      setStatus(`线路中断，切换到线路 ${lineIndex + 2}/${lines.length}...`)
+      setError(null)
+      switchLineRef.current(lineIndex + 1)
+    } else {
+      setError('播放失败：所有线路均不可用，请稍后重试或重新检测频道')
+      setStatus('')
+    }
+  }
 
   useEffect(() => {
     const video = videoRef.current
@@ -41,7 +64,11 @@ export function DesktopPlayer({ channel, onClose }: DesktopPlayerProps) {
 
     const startPlayback = async () => {
       try {
-        playbackUrl = await resolveDesktopStreamUrl(channel.streamUrl)
+        playbackUrl = await resolveDesktopStreamUrl(
+          channel.streamUrl,
+          channel.userAgent,
+          channel.referrer
+        )
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : '无法启动本地流代理')
@@ -128,12 +155,8 @@ export function DesktopPlayer({ channel, onClose }: DesktopPlayerProps) {
           return
         }
 
-        const details = formatHlsError(data)
-        const hint = channel.streamUrl.includes('.m3u8')
-          ? '请确认该频道源有效；桌面版需通过 Tauri 应用（pnpm dev:desktop）播放。'
-          : '该地址可能不是 HLS 直播流（.m3u8），而是网页链接，无法直接播放。'
-        setError(`播放失败：${details}\n${hint}`)
-        setStatus('')
+        // Unrecoverable: try the next source of this station before giving up.
+        failover.current()
       })
     }
 
@@ -192,9 +215,28 @@ export function DesktopPlayer({ channel, onClose }: DesktopPlayerProps) {
       </div>
 
       <div className={`desktop-player-chrome ${showChrome ? 'visible' : ''}`}>
-        <button type="button" className="player-back-button" onClick={onClose}>
-          返回
-        </button>
+        <div className="desktop-player-chrome__left">
+          <button type="button" className="player-back-button" onClick={onClose}>
+            返回
+          </button>
+          <div className="player-info">
+            <strong>{channel.name}</strong>
+            {lines.length > 1 ? (
+              <span className="player-lines">
+                {lines.map((line, index) => (
+                  <button
+                    key={line.channelId}
+                    type="button"
+                    className={`player-line-pill ${index === lineIndex ? 'active' : ''}`}
+                    onClick={() => onSwitchLine(index)}
+                  >
+                    线路{index + 1}
+                  </button>
+                ))}
+              </span>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {status ? <div className="desktop-player-overlay">{status}</div> : null}

@@ -16,5 +16,6 @@ export {
   SearchIcon,
   SettingsIcon,
   StarFilledIcon,
-  StarIcon
+  StarIcon,
+  TrashIcon
 } from './icons'

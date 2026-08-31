@@ -1075,6 +1075,21 @@ input:focus-visible,
   font-weight: 800;
 }
 
+.channel-lines-badge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(9, 12, 18, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+}
+
 .channel-caption {
   min-width: 0;
   padding: 0 2px;
@@ -1246,6 +1261,166 @@ input:focus-visible,
 .import-form {
   display: grid;
   gap: 0;
+}
+
+.subscription-list {
+  margin-bottom: 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.subscription-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.subscription-toggle input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.subscription-row__text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.subscription-row__text strong {
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subscription-row__text span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.subscription-remove {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.subscription-remove:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+}
+
+.subscription-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.import-presets {
+  margin-bottom: 20px;
+}
+
+.import-presets__label {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.import-presets__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.preset-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.preset-chip strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.preset-chip span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.preset-chip:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+}
+
+.preset-chip:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.import-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.import-toggle input[type='checkbox'] {
+  margin-top: 3px;
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.import-toggle__text {
+  display: grid;
+  gap: 3px;
+}
+
+.import-toggle__text strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.import-toggle__text span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
 }
 
 .import-label {
@@ -1515,6 +1690,59 @@ input:focus-visible,
 
 .player-back-button:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+.desktop-player-chrome__left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.player-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.player-info strong {
+  color: #fff;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-lines {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.player-line-pill {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.player-line-pill:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.player-line-pill.active {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: transparent;
+  color: #10141c;
+  font-weight: 700;
 }
 
 .desktop-player-overlay {

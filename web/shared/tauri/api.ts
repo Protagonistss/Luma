@@ -6,8 +6,9 @@ import type {
   CommandError,
   PlayChannelResponse,
   Playlist,
-  PlaylistSource,
-  ProbeReport
+  ProbeReport,
+  ProbeStatus,
+  Subscription
 } from './types'
 
 function isCommandError(error: unknown): error is CommandError {
@@ -43,14 +44,45 @@ export function isNoPlaylistError(error: unknown): boolean {
 }
 
 export const lumaApi = {
-  importPlaylistFromUrl(url: string) {
-    return invoke<Playlist>('import_playlist_from_url', { url })
+  addSubscriptionFromUrl(url: string, smartGrouping?: boolean) {
+    return invoke<Playlist>('add_subscription_from_url', { url, smartGrouping })
   },
-  importPlaylistFromText(content: string, source: PlaylistSource) {
-    return invoke<Playlist>('import_playlist_from_text', { content, source })
+  addSubscriptionFromFile(
+    path: string,
+    displayName: string,
+    content: string,
+    smartGrouping?: boolean
+  ) {
+    return invoke<Playlist>('add_subscription_from_file', {
+      path,
+      displayName,
+      content,
+      smartGrouping
+    })
+  },
+  listSubscriptions() {
+    return invoke<Subscription[]>('list_subscriptions')
+  },
+  removeSubscription(id: string) {
+    return invoke<Playlist>('remove_subscription', { id })
+  },
+  toggleSubscription(id: string, enabled: boolean) {
+    return invoke<Playlist>('toggle_subscription', { id, enabled })
   },
   refreshPlaylist() {
     return invoke<Playlist>('refresh_playlist')
+  },
+  autoRefreshPlaylist(maxAgeSecs?: number) {
+    return invoke<Playlist | null>('auto_refresh_playlist', { maxAgeSecs })
+  },
+  getProbeStatus() {
+    return invoke<Record<string, ProbeStatus>>('get_probe_status')
+  },
+  getSmartGrouping() {
+    return invoke<boolean>('get_smart_grouping')
+  },
+  setSmartGrouping(enabled: boolean) {
+    return invoke<void>('set_smart_grouping', { enabled })
   },
   listChannels(group?: string) {
     return invoke<Channel[]>('list_channels', { group })
@@ -66,9 +98,6 @@ export const lumaApi = {
   },
   listRecent() {
     return invoke<Channel[]>('list_recent')
-  },
-  getPlaylistSource() {
-    return invoke<PlaylistSource | null>('get_playlist_source')
   },
   playChannel(channelId: string) {
     return invoke<PlayChannelResponse>('play_channel', { channelId })

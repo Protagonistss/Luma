@@ -3,12 +3,19 @@ import { useCallback, useEffect, useState } from 'react'
 import { isNoPlaylistError, lumaApi, toUserMessage } from '@/shared/tauri/api'
 import type { Channel, ChannelGroup } from '@/shared/tauri/types'
 
+/** Playlists older than this get silently refreshed on app startup. */
+const PLAYLIST_AUTO_REFRESH_SECS = 24 * 60 * 60
+
 /**
  * Owns all playlist-derived data (channels, groups, favorites, recent) and
  * keeps the favorite toggle optimistic: the UI flips immediately and rolls
  * back only when the backend call fails.
+ *
+ * On startup, a playlist older than 24h is silently refreshed first (daily
+ * refresh keeps aggregated live sources usable); `onAutoRefreshed` then
+ * fires so callers can e.g. re-probe availability in the background.
  */
-export function usePlaylistData() {
+export function usePlaylistData(onAutoRefreshed?: () => void) {
   const [channels, setChannels] = useState<Channel[]>([])
   const [groups, setGroups] = useState<ChannelGroup[]>([])
   const [favorites, setFavorites] = useState<Channel[]>([])
@@ -70,9 +77,25 @@ export function usePlaylistData() {
     [applySnapshot]
   )
 
+  const bootstrap = useCallback(
+    async (notify: () => void) => {
+      try {
+        const refreshed = await lumaApi.autoRefreshPlaylist(PLAYLIST_AUTO_REFRESH_SECS)
+        if (refreshed) {
+          notify()
+        }
+      } catch {
+        // Auto refresh is best-effort; a stale playlist still loads fine.
+      }
+      await load()
+    },
+    [load]
+  )
+
   useEffect(() => {
-    void load()
-  }, [load])
+    void bootstrap(() => onAutoRefreshed?.())
+    // Bootstrap runs exactly once; callers must pass a stable callback.
+  }, [])
 
   /** Refresh only the recently-watched list after a playback starts. */
   const refreshRecent = useCallback(async () => {

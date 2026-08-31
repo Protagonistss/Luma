@@ -1,8 +1,13 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { CategoryPanel } from '@/features/channels/CategoryPanel'
 import { ChannelGrid } from '@/features/channels/ChannelGrid'
-import { filterChannelsBySection, type SidebarSection } from '@/features/channels/channelSelectors'
+import {
+  buildLineIndex,
+  filterChannelsBySection,
+  mergeChannelLines
+} from '@/features/channels/channelSelectors'
+import type { SidebarSection } from '@/features/channels/channelSelectors'
 import { Sidebar } from '@/features/channels/Sidebar'
 import { ImportPlaylistPanel } from '@/features/import-playlist/ImportPlaylistPanel'
 import { useTvNavigation } from '@/shared/focus/useTvNavigation'
@@ -25,19 +30,58 @@ const DesktopPlayer = lazy(() =>
 
 type View = 'home' | 'settings'
 
+/** One full-screen playback: the ordered line list of the station being
+ * watched plus the currently active line index. */
+interface PlaySession {
+  lines: PlayChannelResponse[]
+  index: number
+}
+
 export function AppShell() {
   const [view, setView] = useState<View>('home')
   const [section, setSection] = useState<SidebarSection>('all')
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [lastFocusedChannelId, setLastFocusedChannelId] = useState<string | null>(null)
-  const [playingChannel, setPlayingChannel] = useState<PlayChannelResponse | null>(null)
-  const [showPlayableOnly, setShowPlayableOnly] = useState(false)
+  const [playSession, setPlaySession] = useState<PlaySession | null>(null)
+  const [hideUnavailable, setHideUnavailable] = useState(false)
 
-  const playlist = usePlaylistData()
   const probe = useChannelProbe()
+  const handleAutoRefreshed = useCallback(() => {
+    void probe.runProbe()
+  }, [probe.runProbe])
+  const playlist = usePlaylistData(handleAutoRefreshed)
   const onKeyDown = useTvNavigation()
   const clock = useClock()
+
+  // All channels merged by station: duplicate sources become one card, and
+  // every id maps to its ordered line list for playback failover.
+  const lineIndex = useMemo(
+    () => buildLineIndex(mergeChannelLines(playlist.channels, probe.probeStatusById)),
+    [playlist.channels, probe.probeStatusById]
+  )
+
+  const visibleChannels = useMemo(
+    () =>
+      mergeChannelLines(
+        filterChannelsBySection(
+          section,
+          activeGroup,
+          playlist.channels,
+          playlist.favorites,
+          playlist.recent
+        ),
+        probe.probeStatusById
+      ),
+    [
+      section,
+      activeGroup,
+      playlist.channels,
+      playlist.favorites,
+      playlist.recent,
+      probe.probeStatusById
+    ]
+  )
 
   useEffect(() => {
     if (!toast) {
@@ -58,24 +102,23 @@ export function AppShell() {
     element?.focus()
   }, [playlist.channels, lastFocusedChannelId, view, section, activeGroup])
 
-  const visibleChannels = useMemo(
-    () =>
-      filterChannelsBySection(
-        section,
-        activeGroup,
-        playlist.channels,
-        playlist.favorites,
-        playlist.recent
-      ),
-    [section, activeGroup, playlist.channels, playlist.favorites, playlist.recent]
-  )
-
   const handlePlay = async (channelId: string) => {
     setLastFocusedChannelId(channelId)
     try {
       const payload = await lumaApi.playChannel(channelId)
       if (shouldUseDesktopPlayer()) {
-        setPlayingChannel(payload)
+        // Failover list: the clicked line first, then siblings ordered by
+        // probe health (best line first).
+        const siblings = (lineIndex.get(channelId) ?? [])
+          .filter((line) => line.id !== payload.channelId)
+          .map((line) => ({
+            channelId: line.id,
+            name: line.name,
+            streamUrl: line.streamUrl,
+            userAgent: line.userAgent ?? null,
+            referrer: line.referrer ?? null
+          }))
+        setPlaySession({ lines: [payload, ...siblings], index: 0 })
       } else {
         await openNativePlayer(payload)
       }
@@ -84,6 +127,23 @@ export function AppShell() {
       setToast(toUserMessage(err))
     }
   }
+
+  const playSessionRef = useRef<PlaySession | null>(null)
+  playSessionRef.current = playSession
+
+  const handleSwitchLine = useCallback(
+    (index: number) => {
+      const session = playSessionRef.current
+      if (!session || index < 0 || index >= session.lines.length) {
+        return
+      }
+      setPlaySession({ lines: session.lines, index })
+      // Record the new line as recently watched (best-effort).
+      void lumaApi.playChannel(session.lines[index]!.channelId).catch(() => undefined)
+      void playlist.refreshRecent()
+    },
+    [playlist]
+  )
 
   const handleToggleFavorite = async (channelId: string) => {
     const message = await playlist.toggleFavorite(channelId)
@@ -96,6 +156,17 @@ export function AppShell() {
     const message = await probe.runProbe(channelIds)
     setToast(message)
   }
+
+  // Any import / subscribe / refresh changes the channel set, so a probe
+  // follows automatically: dead lines get badges, 「隐藏不可用」 has data to
+  // act on, and failover ordering picks the best-known line. Without this,
+  // manually added subscriptions never get probed (auto-refresh only fires
+  // for lists older than 24h).
+  const handleImported = useCallback(() => {
+    setView('home')
+    void playlist.load()
+    void runProbe()
+  }, [playlist])
 
   return (
     <div
@@ -134,12 +205,7 @@ export function AppShell() {
         {playlist.error ? <div className="error-banner">{playlist.error}</div> : null}
         {view === 'settings' ? (
           <ScrollArea className="content-scroll" hideScrollbar>
-            <ImportPlaylistPanel
-              onImported={() => {
-                setView('home')
-                void playlist.load()
-              }}
-            />
+            <ImportPlaylistPanel onImported={handleImported} />
           </ScrollArea>
         ) : (
           <ChannelGrid
@@ -152,21 +218,27 @@ export function AppShell() {
             probing={probe.probing}
             probeStatusById={probe.probeStatusById}
             probeSummary={probe.probeSummary}
-            showPlayableOnly={showPlayableOnly}
+            hideUnavailable={hideUnavailable}
             clock={clock}
             onPlay={handlePlay}
             onToggleFavorite={handleToggleFavorite}
             onProbeVisible={() => void runProbe(visibleChannels.map((channel) => channel.id))}
             onProbeAll={() => void runProbe()}
-            onTogglePlayableOnly={() => setShowPlayableOnly((value) => !value)}
+            onToggleHideUnavailable={() => setHideUnavailable((value) => !value)}
             onOpenSettings={() => setView('settings')}
           />
         )}
       </main>
       {toast ? <div className="toast">{toast}</div> : null}
-      {playingChannel ? (
+      {playSession ? (
         <Suspense fallback={null}>
-          <DesktopPlayer channel={playingChannel} onClose={() => setPlayingChannel(null)} />
+          <DesktopPlayer
+            channel={playSession.lines[playSession.index]!}
+            lines={playSession.lines}
+            lineIndex={playSession.index}
+            onSwitchLine={handleSwitchLine}
+            onClose={() => setPlaySession(null)}
+          />
         </Suspense>
       ) : null}
     </div>

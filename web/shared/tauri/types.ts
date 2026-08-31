@@ -5,6 +5,9 @@ export interface Channel {
   group: string
   logo?: string | null
   tvgId?: string | null
+  /** Per-channel request hints; UA-checked origins reject default clients. */
+  userAgent?: string | null
+  referrer?: string | null
 }
 
 export interface ChannelGroup {
@@ -18,13 +21,24 @@ export interface Playlist {
 }
 
 export type PlaylistSource =
-  | { type: 'Url'; url: string; displayUrl: string }
-  | { type: 'File'; path: string; displayName: string }
+  | { type: 'url'; url: string; displayUrl: string }
+  | { type: 'file'; path: string; displayName: string }
+
+/** One playlist subscription; the on-screen playlist merges every enabled
+ * subscription, turning same-station channels into alternate lines. */
+export interface Subscription {
+  id: string
+  source: PlaylistSource
+  enabled: boolean
+  importedAt: number
+}
 
 export interface PlayChannelResponse {
   channelId: string
   name: string
   streamUrl: string
+  userAgent?: string | null
+  referrer?: string | null
 }
 
 export interface CommandError {

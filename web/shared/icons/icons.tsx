@@ -131,6 +131,18 @@ export function FileIcon(props: IconProps) {
   )
 }
 
+export function TrashIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5.5 6.5h13" />
+      <path d="M9.5 6.5V4.75a1.25 1.25 0 0 1 1.25-1.25h2.5a1.25 1.25 0 0 1 1.25 1.25V6.5" />
+      <path d="M7.5 6.5 8.4 18.6a1.5 1.5 0 0 0 1.5 1.4h4.2a1.5 1.5 0 0 0 1.5-1.4L16.5 6.5" />
+      <path d="M10.5 10v6" />
+      <path d="M13.5 10v6" />
+    </Icon>
+  )
+}
+
 export function RefreshIcon(props: IconProps) {
   return (
     <Icon {...props}>

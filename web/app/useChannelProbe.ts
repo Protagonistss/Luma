@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { lumaApi, toUserMessage } from '@/shared/tauri/api'
 import type { ProbeReport, ProbeStatus } from '@/shared/tauri/types'
@@ -12,12 +12,21 @@ export interface ProbeSummary {
 /**
  * State machine for channel availability probing. `runProbe` always resolves
  * with a toast-ready message: a summary line on success or an error message.
+ * On mount the persisted probe cache (written by the backend after every
+ * probe) is loaded so cards keep their live/offline badges across restarts.
  */
 export function useChannelProbe() {
   const [probing, setProbing] = useState(false)
   const [probeStatusById, setProbeStatusById] = useState<Record<string, ProbeStatus>>({})
   const [probeSummary, setProbeSummary] = useState<ProbeSummary | null>(null)
   const runningRef = useRef(false)
+
+  useEffect(() => {
+    lumaApi
+      .getProbeStatus()
+      .then((cached) => setProbeStatusById(cached))
+      .catch(() => undefined)
+  }, [])
 
   const applyReport = useCallback((report: ProbeReport) => {
     setProbeStatusById((previous) => {

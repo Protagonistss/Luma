@@ -53,7 +53,7 @@ pub async fn probe_channels(channels: Vec<Channel>) -> AppResult<ProbeReport> {
             let client = client.clone();
             tasks.push(tokio::spawn(async move {
                 let started = Instant::now();
-                let (status, message) = probe_stream(&client, &channel.stream_url).await;
+                let (status, message) = probe_stream(&client, &channel).await;
                 ChannelProbeResult {
                     channel_id: channel.id,
                     status,
@@ -95,15 +95,25 @@ pub async fn probe_channels(channels: Vec<Channel>) -> AppResult<ProbeReport> {
     })
 }
 
-async fn probe_stream(client: &reqwest::Client, url: &str) -> (ProbeStatus, Option<String>) {
-    if !url.starts_with("http://") && !url.starts_with("https://") {
+async fn probe_stream(client: &reqwest::Client, channel: &Channel) -> (ProbeStatus, Option<String>) {
+    if !channel.stream_url.starts_with("http://") && !channel.stream_url.starts_with("https://") {
         return (
             ProbeStatus::InvalidBody,
             Some("unsupported stream scheme".to_string()),
         );
     }
 
-    let response = match client.get(url).send().await {
+    // Honor the list's request hints: UA-checked origins reject the default
+    // client and would otherwise be misreported as dead.
+    let mut request = client.get(&channel.stream_url);
+    if let Some(user_agent) = channel.user_agent.as_deref() {
+        request = request.header(reqwest::header::USER_AGENT, user_agent);
+    }
+    if let Some(referrer) = channel.referrer.as_deref() {
+        request = request.header(reqwest::header::REFERER, referrer);
+    }
+
+    let response = match request.send().await {
         Ok(response) => response,
         Err(err) => {
             return (ProbeStatus::Unreachable, Some(err.to_string()));
@@ -125,7 +135,7 @@ async fn probe_stream(client: &reqwest::Client, url: &str) -> (ProbeStatus, Opti
     };
 
     let sample = &bytes[..bytes.len().min(MAX_PROBE_BODY_BYTES)];
-    if is_playable_body(sample, url) {
+    if is_playable_body(sample, &channel.stream_url) {
         (ProbeStatus::Playable, None)
     } else {
         (
