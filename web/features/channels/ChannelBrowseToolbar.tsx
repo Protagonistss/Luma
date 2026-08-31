@@ -1,3 +1,5 @@
+import { ProbeIcon, SearchIcon } from "@/shared/icons";
+
 interface ChannelBrowseToolbarProps {
   title: string;
   count: number;
@@ -33,13 +35,16 @@ export function ChannelBrowseToolbar({
           <span className="channel-browse-toolbar__count">{count}</span>
         </h2>
 
-        <input
-          className="channel-search"
-          type="search"
-          placeholder="搜索频道..."
-          value={searchQuery}
-          onChange={(event) => onSearchChange(event.target.value)}
-        />
+        <div className="channel-search-wrap">
+          <SearchIcon className="channel-search__icon" size={16} />
+          <input
+            className="channel-search"
+            type="search"
+            placeholder="搜索频道..."
+            value={searchQuery}
+            onChange={(event) => onSearchChange(event.target.value)}
+          />
+        </div>
 
         <div className="channel-browse-toolbar__actions">
           <button
@@ -55,6 +60,7 @@ export function ChannelBrowseToolbar({
             disabled={probing}
             onClick={onProbeVisible}
           >
+            <ProbeIcon size={14} />
             {probing ? "检测中" : "检测"}
           </button>
           <button

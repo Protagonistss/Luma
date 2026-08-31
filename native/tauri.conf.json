@@ -13,10 +13,14 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "Luma",
         "width": 1280,
         "height": 720,
-        "resizable": true
+        "resizable": true,
+        "decorations": false,
+        "theme": "Dark",
+        "backgroundColor": "#07080c"
       }
     ],
     "security": {

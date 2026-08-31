@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { Channel, ProbeStatus } from "@/shared/tauri/types";
+import { StarFilledIcon, StarIcon } from "@/shared/icons";
 import { isRenderableLogoUrl } from "@/shared/media/logoUrl";
 
 interface ChannelCardProps {
@@ -75,9 +76,6 @@ export function ChannelCard({
       }}
     >
       <div className="channel-poster" style={{ background: posterTone(channel.name) }}>
-        <div className="channel-card__play" aria-hidden>
-          <span>播放</span>
-        </div>
         {label ? (
           <span className={`probe-badge ${probeStatus ?? "checking"}`}>{label}</span>
         ) : null}
@@ -91,7 +89,7 @@ export function ChannelCard({
             onToggleFavorite(channel.id);
           }}
         >
-          {isFavorite ? "★" : "☆"}
+          {isFavorite ? <StarFilledIcon size={16} /> : <StarIcon size={16} />}
         </button>
         {logoUrl && !logoFailed ? (
           <img

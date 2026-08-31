@@ -1,6 +1,12 @@
 import { useState } from "react";
 
 import { lumaApi, toUserMessage } from "@/shared/tauri/api";
+import {
+  ChevronRightIcon,
+  FileIcon,
+  ImportIcon,
+  RefreshIcon,
+} from "@/shared/icons";
 
 interface ImportPlaylistPanelProps {
   onImported: () => void;
@@ -110,6 +116,7 @@ export function ImportPlaylistPanel({ onImported }: ImportPlaylistPanelProps) {
               disabled={loading || !url.trim()}
               onClick={importFromUrl}
             >
+              <ImportIcon size={16} />
               {loading ? "导入中" : "导入"}
             </button>
           </div>
@@ -124,13 +131,14 @@ export function ImportPlaylistPanel({ onImported }: ImportPlaylistPanelProps) {
             disabled={loading}
             onClick={importFromFile}
           >
+            <span className="import-option__leading">
+              <FileIcon size={18} />
+            </span>
             <span className="import-option__text">
               <strong>从本地文件导入</strong>
               <span>m3u · m3u8 · txt</span>
             </span>
-            <span className="import-option__arrow" aria-hidden>
-              →
-            </span>
+            <ChevronRightIcon className="import-option__arrow" size={18} />
           </button>
           <button
             type="button"
@@ -138,13 +146,14 @@ export function ImportPlaylistPanel({ onImported }: ImportPlaylistPanelProps) {
             disabled={loading}
             onClick={refresh}
           >
+            <span className="import-option__leading">
+              <RefreshIcon size={18} />
+            </span>
             <span className="import-option__text">
               <strong>刷新当前列表</strong>
               <span>重新下载已保存的 URL</span>
             </span>
-            <span className="import-option__arrow" aria-hidden>
-              →
-            </span>
+            <ChevronRightIcon className="import-option__arrow" size={18} />
           </button>
         </div>
       </div>

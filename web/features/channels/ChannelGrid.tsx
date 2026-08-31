@@ -9,6 +9,7 @@ import {
   VirtualChannelList,
 } from "./VirtualChannelList";
 import { ScrollArea } from "@/shared/ui/ScrollArea";
+import { LumaLogoIcon } from "@/shared/icons";
 import type { Channel, ProbeStatus } from "@/shared/tauri/types";
 
 interface ChannelGridProps {
@@ -120,7 +121,9 @@ export function ChannelGrid({
   if (channels.length === 0) {
     return (
       <div className="empty-state">
-        <p className="kicker">Luma</p>
+        <span className="empty-state__mark" aria-hidden>
+          <LumaLogoIcon size={36} />
+        </span>
         <h2>还没有频道</h2>
         <p>导入一份 M3U 播放列表，即可在电视上浏览和播放直播频道。</p>
         <button type="button" className="primary-button" onClick={onOpenSettings}>

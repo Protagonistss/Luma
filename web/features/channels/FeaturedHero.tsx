@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { LiveIcon } from "@/shared/icons";
 import { isRenderableLogoUrl } from "@/shared/media/logoUrl";
 import type { Channel } from "@/shared/tauri/types";
 
@@ -36,7 +37,7 @@ export function FeaturedHero({ channel, onPlay }: FeaturedHeroProps) {
       <div className="hero-card__mesh" aria-hidden />
       <div className="hero-card__content">
         <span className="hero-card__badge">
-          <span className="live-dot" aria-hidden />
+          <LiveIcon className="hero-card__live-icon" size={12} />
           继续观看
         </span>
         <h3>{channel.name}</h3>

@@ -1,17 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { isAndroidTauri, isTauriRuntime } from "@/shared/platform";
 import type { PlayChannelResponse } from "./types";
-
-function isAndroidTauri(): boolean {
-  return import.meta.env.TAURI_ENV_PLATFORM === "android";
-}
-
-function isTauriRuntime(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  return "__TAURI_INTERNALS__" in window || "__TAURI__" in window;
-}
 
 export function shouldUseDesktopPlayer(): boolean {
   return !isAndroidTauri();
